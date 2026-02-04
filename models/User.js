@@ -52,12 +52,11 @@ const userSchema = new mongoose.Schema({
 },
     { timestamps: true });
 
-    userSchema.pre('save', function (next) {
+    userSchema.pre('validate', function () {
     if (!this.userId) {
         const randomDigits = Math.floor(100000 + Math.random() * 900000);
         this.userId = `mc${randomDigits}`; 
     }
-    next();
 });
 
 module.exports = mongoose.model('User', userSchema);
