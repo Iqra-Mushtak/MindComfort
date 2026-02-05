@@ -9,4 +9,11 @@ const adminOnly = (req, res, next) => {
     }
 };
 
-module.exports = { adminOnly };
+const mentorOnly = (req, res, next) => {
+    if (req.headers.role !== 'mentor') {
+        return res.status(403).json({ message: "Access Denied. Mentors only." });
+    }
+    next();
+};
+
+module.exports = { adminOnly, mentorOnly };

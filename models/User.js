@@ -45,8 +45,9 @@ const userSchema = new mongoose.Schema({
     status: { 
         type: String, 
         enum: ['pending', 'approved', 'rejected'], 
+        required: function() { return this.role === 'mentor'; },
         default: function() {
-            return this.role === 'mentor' ? 'pending' : 'approved'; 
+            return this.role === 'mentor' ? 'pending' : undefined; 
         }
     },
 },
