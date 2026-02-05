@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const sendEmail = require('../utils/sendEmail');
 
 exports.createAdmin = async (req, res) => {
     try {
@@ -62,22 +63,68 @@ exports.register = async (req, res) => {
         if (existingUser) {
             return res.status(400).json({ message: "User already exists." });
         }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpires = Date.now() + 10 * 60 * 1000; 
+
         const hashedPassword = await bcrypt.hash(password, 10);
+
         const newUser = new User({
             username,
             email,
             password: hashedPassword,
-            role
+            role,
+            otp,
+            otpExpires
         });
 
     await newUser.save();
+    try {
+        await sendEmail({
+            email: newUser.email,
+            subject: 'Your MindComfort Verification Code',
+            message: `Welcome to MindComfort! Your verification code is: ${otp}. It expires in 10 minutes.`
+    });
 
-    res.status(201).json({ message: "Account created successfully."});
+    
+            res.status(201).json({
+                message: "OTP sent to email. Please verify your account.",
+                userId: newUser.userId
+            });
+        } catch (emailError) {
+            return res.status(500).json({ message: "User saved but email failed.", error: emailError.message });
+        }
 
     } catch (error) {
         res.status(500).json({ message: "Server Error", error: error.message });
     }
 };
+exports.verifyOTP = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
 
+        const user = await User.findOne({ email });
 
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
+        }
 
+        if (user.otp !== otp) {
+            return res.status(400).json({ message: "Invalid OTP code." });
+        }
+
+        if (user.otpExpires < Date.now()) {
+            return res.status(400).json({ message: "OTP has expired." });
+        }
+
+        user.isVerified = true;
+        user.otp = undefined; 
+        user.otpExpires = undefined;
+        await user.save();
+
+    res.status(201).json({ message: "Email verified successfully! You can now login."});
+
+    } catch (error) {
+        res.status(500).json({ message: "Server Error", error: error.message });
+    }
+};
