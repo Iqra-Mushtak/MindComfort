@@ -7,7 +7,6 @@ const mentorApplicationSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-
     fullName: {
       type: String,
       required: true,

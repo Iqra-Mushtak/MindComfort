@@ -154,14 +154,13 @@ exports.submitMentorApplication = async (req, res) => {
 
     const Qualification = qualification?.toLowerCase().trim();
 
-    const isEligible =
-      Qualification === "masters in clinical psychology" ||
-      Qualification === "adcp";
+      const QualificationMasters = Qualification.includes("masters in psychology");
+      const QualificationADCP = Qualification.includes("adcp");
 
-    if (!isEligible) {
+    if (QualificationMasters && QualificationADCP) {
       return res.status(400).json({
         message:
-          "Eligibility Error: We only accept 'Masters in Clinical Psychology' or 'ADCP'.",
+          "Eligibility Error: You must have a 'Masters in Psychology' or 'ADCP'.",
       });
     }
 
@@ -213,7 +212,7 @@ exports.adminReviewMentor = async (req, res) => {
     await mentor.save();
 
     await MentorApplication.findOneAndUpdate({ mentorId }, { status: decision });
-    
+
     res.status(200).json({
       message: `Mentor has been successfully ${decision}.`,
       status: mentor.status,
