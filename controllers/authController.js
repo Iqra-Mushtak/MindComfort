@@ -98,12 +98,10 @@ exports.register = async (req, res) => {
         userId: newUser.userId,
       });
     } catch (emailError) {
-      return res
-        .status(500)
-        .json({
-          message: "User saved but email failed.",
-          error: emailError.message,
-        });
+      return res.status(500).json({
+        message: "User saved but email failed.",
+        error: emailError.message,
+      });
     }
   } catch (error) {
     res.status(500).json({ message: "Server Error", error: error.message });
@@ -132,9 +130,18 @@ exports.verifyOTP = async (req, res) => {
     user.otpExpires = undefined;
     await user.save();
 
+    let customMessage = "Email verified successfully!";
+
+    if (user.role === "mentor") {
+      customMessage +=
+        " Please complete your application to proceed for admin review.";
+    } else {
+      customMessage += " You can now login.";
+    }
+
     res
       .status(201)
-      .json({ message: "Email verified successfully! You can now login." });
+      .json({ message: customMessage, role: user.role, userId: user.userId });
   } catch (error) {
     res.status(500).json({ message: "Server Error", error: error.message });
   }
@@ -154,8 +161,10 @@ exports.submitMentorApplication = async (req, res) => {
 
     const Qualification = qualification?.toLowerCase().trim();
 
-      const QualificationMasters = Qualification.includes("masters in psychology");
-      const QualificationADCP = Qualification.includes("adcp");
+    const QualificationMasters = Qualification.includes(
+      "masters in psychology",
+    );
+    const QualificationADCP = Qualification.includes("adcp");
 
     if (QualificationMasters && QualificationADCP) {
       return res.status(400).json({
@@ -194,14 +203,12 @@ exports.submitMentorApplication = async (req, res) => {
 };
 exports.adminReviewMentor = async (req, res) => {
   try {
-    const { mentorId, decision } = req.body;
+    const { mentorId, decision, reason } = req.body;
 
     if (!["approved", "rejected"].includes(decision)) {
-      return res
-        .status(400)
-        .json({
-          message: "Invalid decision. Must be 'approved' or 'rejected'.",
-        });
+      return res.status(400).json({
+        message: "Invalid decision. Must be 'approved' or 'rejected'.",
+      });
     }
 
     const mentor = await User.findById(mentorId);
@@ -211,7 +218,43 @@ exports.adminReviewMentor = async (req, res) => {
     mentor.status = decision;
     await mentor.save();
 
-    await MentorApplication.findOneAndUpdate({ mentorId }, { status: decision });
+    await MentorApplication.findOneAndUpdate(
+      { mentorId },
+      { status: decision },
+    );
+
+    const subject =
+      decision === "approved"
+        ? "Welcome to MindComfort! Your Profile is Live."
+        : "Update on your MindComfort Application";
+
+    const htmlContent =
+      decision === "approved"
+        ? `<h2>Congratulations, ${mentor.username}!</h2>
+         <p>After our interview, we are excited to approve your profile.</p>
+         <p>Your Mentor ID is: <b>${mentor.userId}</b></p>
+         <p>You can now log in and start your practice.</p>
+         <p>Regards</p>
+         <p>Team MindComfort</p>`
+        : `<h2>Application Update</h2>
+         <p>Hi ${mentor.username},</p>
+          <p>Thank you for your interest in joining MindComfort as a mentor.</p>
+          <p>After a careful review of your application, we regret to inform you that we are not moving forward with your profile at this time.</p>
+          ${
+            reason
+              ? `<p><b>Reason:</b> ${reason}</p>
+          <p>We wish you all the best in your future professional endeavors.</p>
+          <p>Regards</p>
+         <p>Team MindComfort</p>`
+              : ""
+          }`;
+
+    await sendEmail({
+      email: mentor.email,
+      subject: subject,
+      message: `Your application has been ${decision}.`,
+      html: htmlContent,
+    });
 
     res.status(200).json({
       message: `Mentor has been successfully ${decision}.`,
