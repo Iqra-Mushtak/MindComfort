@@ -313,6 +313,30 @@ exports.adminReviewMentor = async (req, res) => {
   }
 };
 
+exports.getAllApplications = async (req, res) => {
+  try {
+    const applications = await MentorApplication.find()
+      .populate('mentorId', 'username email userId status');
+
+    res.status(200).json(applications);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch applications", error: error.message });
+  }
+};
+
+exports.getApplicationById = async (req, res) => {
+  try {
+    const application = await MentorApplication.findById(req.params.id)
+      .populate('mentorId', 'username email userId status');
+
+    if (!application) return res.status(404).json({ message: "Application not found" });
+
+    res.status(200).json(application);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching application", error: error.message });
+  }
+};
+
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
