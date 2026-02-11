@@ -147,6 +147,51 @@ exports.verifyOTP = async (req, res) => {
   }
 };
 
+exports.resendOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (user.isVerified) {
+      return res
+        .status(400)
+        .json({ message: "Account already verified. You can login." });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = Date.now() + 10 * 60 * 1000;
+
+    user.otp = otp;
+    user.otpExpires = otpExpires;
+    await user.save();
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Your New MindComfort Verification Code",
+        message: `Your new verification code is: ${otp}. It expires in 10 minutes.`,
+      });
+
+      res.status(200).json({
+        message: "A new OTP has been sent to your email.",
+        userId: user.userId,
+      });
+    } catch (emailError) {
+      return res.status(500).json({
+        message: "OTP generated in system, but email failed to send.",
+        error: emailError.message,
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
 exports.submitMentorApplication = async (req, res) => {
   try {
     const {
