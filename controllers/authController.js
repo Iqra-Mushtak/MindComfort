@@ -2,6 +2,7 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 const MentorApplication = require("../models/MentorApplication");
+const jwt = require('jsonwebtoken');
 
 exports.createAdmin = async (req, res) => {
   try {
@@ -310,4 +311,52 @@ exports.adminReviewMentor = async (req, res) => {
       .status(500)
       .json({ message: "Admin review failed.", error: error.message });
   }
+};
+
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: "Invalid Email or Password" });
+        }
+
+        if (!user.isVerified) {
+            return res.status(401).json({ message: "Please verify your email first." });
+        }
+
+        if (user.role === 'mentor' && user.status !== 'approved') {
+            const statusMsgs = {
+                pending: "Your application is still under review by the admin.",
+                rejected: "Your application was not approved."
+            };
+            return res.status(403).json({ message: statusMsgs[user.status] || "Access Denied" });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid Email or Password" });
+        }
+
+        const token = jwt.sign(
+            { id: user._id, role: user.role, userId: user.userId },
+            process.env.JWT_SECRET,
+            { expiresIn: '365d' } 
+        );
+
+        res.status(200).json({
+            message: "Login Successful!",
+            token,
+            user: {
+                userId: user.userId,
+                username: user.username,
+                role: user.role,
+                status: user.status
+            }
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: "Server Error", error: error.message });
+    }
 };
