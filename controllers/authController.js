@@ -108,7 +108,7 @@ exports.register = async (req, res) => {
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
-exports.verifyOTP = async (req, res) => {
+exports.verifyRegisterOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
@@ -380,7 +380,102 @@ exports.login = async (req, res) => {
             }
         });
 
-    } catch (error) {
+        } catch (error) {
         res.status(500).json({ message: "Server Error", error: error.message });
     }
+};
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User with this email does not exist." });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = Date.now() + 10 * 60 * 1000;
+
+    user.otp = otp;
+    user.otpExpires = otpExpires;
+    await user.save();
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "MindComfort Password Reset Code",
+        message: `You requested a password reset. Your verification code is: ${otp}. It expires in 10 minutes.`,
+      });
+
+      res.status(200).json({ message: "OTP sent to email. Use it to verify your identity." });
+    } catch (emailError) {
+      return res.status(500).json({
+        message: "Failed to send reset email.",
+        error: emailError.message,
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
+exports.verifyResetOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    const user = await User.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired OTP." });
+    }
+
+    const resetToken = jwt.sign(
+      { id: user._id }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: "10m" }
+    );
+
+    user.resetPasswordToken = resetToken;
+    await user.save();
+
+    res.status(200).json({ 
+      message: "OTP verified. You may now reset your password.", 
+      resetToken 
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { resetToken, newPassword, confirmPassword } = req.body;
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match." });
+    }
+
+    const user = await User.findOne({ resetPasswordToken: resetToken });
+
+    if (!user) {
+      return res.status(400).json({ message: "Your session has expired. Please request a new code." });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+
+    user.resetPasswordToken = undefined;
+    
+    await user.save();
+
+    res.status(200).json({ message: "Password updated successfully!" });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
 };

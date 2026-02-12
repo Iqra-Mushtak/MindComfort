@@ -50,6 +50,11 @@ const userSchema = new mongoose.Schema({
             return this.role === 'mentor' ? 'pending' : undefined; 
         }
     },
+
+    resetPasswordToken: {
+        type: String,
+        default: null,
+  },
 },
     { timestamps: true });
 
