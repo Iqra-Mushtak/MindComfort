@@ -364,7 +364,7 @@ exports.login = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user._id, role: user.role, userId: user.userId },
+            { id: user._id, role: user.role, userId: user.userId, tokenVersion: user.tokenVersion },
             process.env.JWT_SECRET,
             { expiresIn: '365d' } 
         );
@@ -477,5 +477,21 @@ exports.resetPassword = async (req, res) => {
     res.status(200).json({ message: "Password updated successfully!" });
   } catch (error) {
     res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
+exports.logout = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.tokenVersion += 1;
+    await user.save();
+
+    res.status(200).json({ message: "Logged out successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Logout failed", error: error.message });
   }
 };
