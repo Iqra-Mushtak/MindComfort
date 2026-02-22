@@ -60,6 +60,14 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0,
   },
+    lastActive: {
+        type: Date,
+        default: Date.now,
+    },
+    isBlacklisted: {
+        type: Boolean,
+        default: false,
+    },
 },
     { timestamps: true });
 

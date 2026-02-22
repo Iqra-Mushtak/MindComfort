@@ -20,6 +20,9 @@ const protect = async (req, res, next) => {
                 return res.status(401).json({ message: 'Session expired. Please log in again.' });
             }
 
+            user.lastActive = Date.now();
+            await user.save();
+            
             req.user = user;
             next();
         } catch (error) {

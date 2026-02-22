@@ -196,6 +196,7 @@ exports.resendOTP = async (req, res) => {
 exports.submitMentorApplication = async (req, res) => {
   try {
     const {
+      email,
       mentorId,
       fullName,
       qualification,
@@ -205,6 +206,19 @@ exports.submitMentorApplication = async (req, res) => {
       declaration,
     } = req.body;
 
+    const user = await User.findOne({ email });
+
+    if (!user || user.role !== 'mentor') {
+      return res.status(404).json({ message: "Mentor account not found with this email." });
+    }
+
+    if (user.status === 'approved') {
+      return res.status(400).json({ message: "Your account is already approved. Please login." });
+    }
+    if (user.isBlacklisted) {
+      return res.status(403).json({ message: "You are ineligible to re-apply." });
+    }
+
     const Qualification = qualification?.toLowerCase().trim();
 
     const QualificationMasters = Qualification.includes(
@@ -212,7 +226,7 @@ exports.submitMentorApplication = async (req, res) => {
     );
     const QualificationADCP = Qualification.includes("adcp");
 
-    if (QualificationMasters && QualificationADCP) {
+    if (!QualificationMasters && !QualificationADCP) {
       return res.status(400).json({
         message:
           "Eligibility Error: You must have a 'Masters in Psychology' or 'ADCP'.",
@@ -225,7 +239,7 @@ exports.submitMentorApplication = async (req, res) => {
         .json({ message: "You must agree to the declaration." });
     }
     const application = new MentorApplication({
-      mentorId,
+      mentorId: user.id,
       fullName,
       qualification,
       experience,

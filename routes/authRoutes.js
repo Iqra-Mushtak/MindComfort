@@ -8,7 +8,7 @@ router.post('/setup-admin', createAdmin);
 router.post('/create-moderator', protect, adminOnly, createModerator);
 router.post('/register', register);
 router.post('/verifyRegister-otp', verifyRegisterOTP);
-router.post('/submit-application', protect, mentorOnly, submitMentorApplication);
+router.post('/submit-application', submitMentorApplication);
 router.put('/review-application', protect, adminOnly, adminReviewMentor);
 router.post('/resend-otp', resendOTP);
 router.post('/login', login);
