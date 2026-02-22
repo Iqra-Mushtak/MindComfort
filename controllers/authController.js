@@ -15,17 +15,32 @@ exports.createAdmin = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = Date.now() + 10 * 60 * 1000;
+
     const admin = new User({
       username,
       email,
       password: hashedPassword,
       role: "admin",
-      isVerified: true,
+      isVerified: false,
       status: "approved",
     });
 
     await admin.save();
-    res.status(201).json({ message: "Admin created successfully." });
+
+    try {
+      await sendEmail({
+        email: admin.email,
+        subject: "Admin Account Setup Verification Code",
+        message: `Your admin verification code is: ${otp}. Expires in 10 minutes.`,
+      });
+    } catch (emailError) {
+      await User.findByIdAndDelete(admin._id);
+      return res.status(500).json({ message: "Failed to send verification email. Admin not created." });
+    }
+
+    res.status(201).json({ message: "Admin account initialized. Please check your email for the verification code." });
   } catch (error) {
     res
       .status(500)
