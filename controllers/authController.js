@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const passwordSchema = require('../utils/passwordValidator');
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 const MentorApplication = require("../models/MentorApplication");
@@ -13,6 +14,14 @@ exports.createAdmin = async (req, res) => {
       return res.status(400).json({ message: "Admin account already exists." });
     }
 
+    const validationErrors = passwordSchema.validate(password || newPassword, { list: true });
+
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ 
+        message: "Password is too weak.", 
+        failedRules: validationErrors 
+      });
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -25,6 +34,8 @@ exports.createAdmin = async (req, res) => {
       role: "admin",
       isVerified: false,
       status: "approved",
+      otp,
+      otpExpires
     });
 
     await admin.save();
@@ -56,6 +67,14 @@ exports.createModerator = async (req, res) => {
     if (userExists)
       return res.status(400).json({ message: "Email already exists." });
 
+    const validationErrors = passwordSchema.validate(password || newPassword, { list: true });
+
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ 
+        message: "Password is too weak.", 
+        failedRules: validationErrors 
+      });
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const moderator = new User({
@@ -90,6 +109,14 @@ exports.register = async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = Date.now() + 10 * 60 * 1000;
 
+    const validationErrors = passwordSchema.validate(password || newPassword, { list: true });
+
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ 
+        message: "Password is too weak.", 
+        failedRules: validationErrors 
+      });
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
