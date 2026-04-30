@@ -14,7 +14,7 @@ exports.createAdmin = async (req, res) => {
       return res.status(400).json({ message: "Admin account already exists." });
     }
 
-    const validationErrors = passwordSchema.validate(password || newPassword, { list: true });
+    const validationErrors = passwordSchema.validate(password, { list: true });
 
     if (validationErrors.length > 0) {
       return res.status(400).json({ 
@@ -67,7 +67,7 @@ exports.createModerator = async (req, res) => {
     if (userExists)
       return res.status(400).json({ message: "Email already exists." });
 
-    const validationErrors = passwordSchema.validate(password || newPassword, { list: true });
+    const validationErrors = passwordSchema.validate(password, { list: true });
 
     if (validationErrors.length > 0) {
       return res.status(400).json({ 
@@ -109,7 +109,7 @@ exports.register = async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = Date.now() + 10 * 60 * 1000;
 
-    const validationErrors = passwordSchema.validate(password || newPassword, { list: true });
+    const validationErrors = passwordSchema.validate(password, { list: true });
 
     if (validationErrors.length > 0) {
       return res.status(400).json({ 
@@ -517,6 +517,13 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: "Passwords do not match." });
     }
 
+    const validationErrors = passwordSchema.validate(newPassword, { list: true });
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ 
+        message: "New password is too weak.", 
+        failedRules: validationErrors 
+      });
+    }
     const user = await User.findOne({ resetPasswordToken: resetToken });
 
     if (!user) {
@@ -525,7 +532,7 @@ exports.resetPassword = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
-
+    user.tokenVersion +=1;
     user.resetPasswordToken = undefined;
     
     await user.save();

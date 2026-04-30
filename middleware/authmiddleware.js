@@ -20,8 +20,15 @@ const protect = async (req, res, next) => {
                 return res.status(401).json({ message: 'Session expired. Please log in again.' });
             }
 
-            user.lastActive = Date.now();
-            await user.save();
+            const timeLimit = 15 * 60 * 1000; 
+            const isDataOld = !user.lastActive || (Date.now() - user.lastActive) > timeLimit;
+
+            if (isDataOld) {
+                User.updateOne(
+                    { _id: user._id }, 
+                    { $set: { lastActive: Date.now() } }
+                ).catch(err => console.error("LastActive update failed:", err));
+            }
             
             req.user = user;
             next();

@@ -23,13 +23,13 @@ const userSchema = new mongoose.Schema({
         required: true 
     },
 
-//role
+//RBAC
     role: { 
         type: String, 
         enum: ['admin', 'moderator', 'client', 'mentor'], 
         required: true 
     },
-
+//Email Verfication
     isVerified: { 
         type: Boolean, 
         default: false 
@@ -41,7 +41,7 @@ const userSchema = new mongoose.Schema({
         type: Date 
     },
 
-//mentor-status
+//mentor-application lifecycle
     status: { 
         type: String, 
         enum: ['pending', 'approved', 'rejected'], 
@@ -50,7 +50,7 @@ const userSchema = new mongoose.Schema({
             return this.role === 'mentor' ? 'pending' : undefined; 
         }
     },
-
+//Session management and security
     resetPasswordToken: {
         type: String,
         default: null,
@@ -58,19 +58,19 @@ const userSchema = new mongoose.Schema({
 
     tokenVersion: {
         type: Number,
-        default: 0,
+        default: 0, //logout from all devices
   },
     lastActive: {
         type: Date,
-        default: Date.now,
+        default: Date.now, //for logout cron job
     },
     isBlacklisted: {
         type: Boolean,
-        default: false,
+        default: false, //for rejected mentors
     },
 },
-    { timestamps: true });
-
+    { timestamps: true }); //createdAt tracking
+//id generation
     userSchema.pre('validate', function () {
     if (!this.userId) {
         const randomDigits = Math.floor(100000 + Math.random() * 900000);
