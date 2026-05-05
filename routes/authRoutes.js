@@ -3,19 +3,20 @@ const router = express.Router();
 
 const { createAdmin, createModerator, register, verifyRegisterOTP, submitMentorApplication, adminReviewMentor, resendOTP, login, getAllApplications, getApplicationById, forgotPassword, verifyResetOTP, resetPassword, logout } = require('../controllers/authController');
 const { protect, adminOnly, mentorOnly } = require('../middleware/authmiddleware');
+const { loginLimiter, otpLimiter, registerLimiter } = require('../middleware/rateLimiter');
 
 router.post('/setup-admin', createAdmin);
 router.post('/create-moderator', protect, adminOnly, createModerator);
-router.post('/register', register);
-router.post('/verifyRegister-otp', verifyRegisterOTP);
+router.post('/register', registerLimiter, register);
+router.post('/verifyRegister-otp', otpLimiter, verifyRegisterOTP);
 router.post('/submit-application', submitMentorApplication);
 router.put('/review-application', protect, adminOnly, adminReviewMentor);
-router.post('/resend-otp', resendOTP);
-router.post('/login', login);
+router.post('/resend-otp', otpLimiter, resendOTP);
+router.post('/login', loginLimiter, login);
 router.get('/get-applications', protect, adminOnly, getAllApplications);
 router.get('/get-applicationById', protect, adminOnly, getApplicationById);
-router.post('/forgot-password', forgotPassword);
-router.post('/verify-reset-otp', verifyResetOTP);
+router.post('/forgot-password', otpLimiter, forgotPassword);
+router.post('/verify-reset-otp', otpLimiter, verifyResetOTP);
 router.post('/reset-password', resetPassword);
 router.post('/logout', protect, logout);
 

@@ -138,7 +138,6 @@ exports.register = async (req, res) => {
 
       res.status(201).json({
         message: "OTP sent to email. Please verify your account.",
-        userId: newUser.userId,
       });
     } catch (emailError) {
       return res.status(500).json({
@@ -184,7 +183,7 @@ exports.verifyRegisterOTP = async (req, res) => {
 
     res
       .status(201)
-      .json({ message: customMessage, role: user.role, userId: user.userId });
+      .json({ message: customMessage, role: user.role, id: user._id });
   } catch (error) {
     res.status(500).json({ message: "Server Error", error: error.message });
   }
@@ -222,7 +221,6 @@ exports.resendOTP = async (req, res) => {
 
       res.status(200).json({
         message: "A new OTP has been sent to your email.",
-        userId: user.userId,
       });
     } catch (emailError) {
       return res.status(500).json({
@@ -281,7 +279,7 @@ exports.submitMentorApplication = async (req, res) => {
         .json({ message: "You must agree to the declaration." });
     }
     const application = new MentorApplication({
-      mentorId: user.id,
+      mentorId: user._id,
       fullName,
       qualification,
       experience,
@@ -334,7 +332,6 @@ exports.adminReviewMentor = async (req, res) => {
       decision === "approved"
         ? `<h2>Congratulations, ${mentor.username}!</h2>
          <p>After our interview, we are excited to approve your profile.</p>
-         <p>Your Mentor ID is: <b>${mentor.userId}</b></p>
          <p>You can now log in and start your practice.</p>
          <p>Regards</p>
          <p>Team MindComfort</p>`
@@ -372,7 +369,7 @@ exports.adminReviewMentor = async (req, res) => {
 exports.getAllApplications = async (req, res) => {
   try {
     const applications = await MentorApplication.find()
-      .populate('mentorId', 'username email userId status');
+      .populate('mentorId', 'username email status');
 
     res.status(200).json(applications);
   } catch (error) {
@@ -383,7 +380,7 @@ exports.getAllApplications = async (req, res) => {
 exports.getApplicationById = async (req, res) => {
   try {
     const application = await MentorApplication.findById(req.params.id)
-      .populate('mentorId', 'username email userId status');
+      .populate('mentorId', 'username email status');
 
     if (!application) return res.status(404).json({ message: "Application not found" });
 
@@ -420,7 +417,7 @@ exports.login = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user._id, role: user.role, userId: user.userId, tokenVersion: user.tokenVersion },
+            { id: user._id, role: user.role, tokenVersion: user.tokenVersion },
             process.env.JWT_SECRET,
             { expiresIn: '365d' } 
         );
@@ -429,7 +426,7 @@ exports.login = async (req, res) => {
             message: "Login Successful!",
             token,
             user: {
-                userId: user.userId,
+                id: user._id,
                 username: user.username,
                 role: user.role,
                 status: user.status
@@ -545,7 +542,7 @@ exports.resetPassword = async (req, res) => {
 
 exports.logout = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user._id || req.user.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }

@@ -1,26 +1,28 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-//user id   
-    userId: { 
-        type: String, 
-        unique: true, 
-        required: true 
-    },
 
 //user credentials
     username: { 
         type: String, 
-        required: true 
+        required: true,
+        unique: true,
+        trim: true,
+        minlength: 3,
+        maxlength: 30
     },
     email: { 
         type: String, 
         required: true, 
-        unique: true 
+        unique: true,
+        trim: true,
+        lowercase: true
     },
     password: { 
         type: String, 
-        required: true 
+        required: true,
+        minlength: 6,
+        maxlength: 100
     },
 
 //RBAC
@@ -70,12 +72,5 @@ const userSchema = new mongoose.Schema({
     },
 },
     { timestamps: true }); //createdAt tracking
-//id generation
-    userSchema.pre('validate', function () {
-    if (!this.userId) {
-        const randomDigits = Math.floor(100000 + Math.random() * 900000);
-        this.userId = `mc${randomDigits}`; 
-    }
-});
 
 module.exports = mongoose.model('User', userSchema);

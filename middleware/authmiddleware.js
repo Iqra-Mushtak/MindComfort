@@ -10,7 +10,7 @@ const protect = async (req, res, next) => {
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            const user = await User.findById(decoded.id).select('-password');
+            const user = await User.findById(decoded._id).select('-password');
 
             if (!user) {
                 return res.status(401).json({ message: 'User no longer exists.' });
@@ -30,7 +30,7 @@ const protect = async (req, res, next) => {
                 ).catch(err => console.error("LastActive update failed:", err));
             }
             
-            req.user = user;
+            req.user._id = user;
             next();
         } catch (error) {
             res.status(401).json({ message: 'Not authorized, token failed.' });
