@@ -1,0 +1,387 @@
+const User = require('../models/User');
+const MentorProfile = require('../models/MentorProfile');
+const bcrypt = require('bcryptjs');
+const passwordSchema = require('../utils/passwordValidator');
+const sendEmail = require('../utils/sendEmail');
+
+exports.getProfile = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+
+        const user = await User.findById(userId).select('-password -otp -otpExpires -resetPasswordToken');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        let profile = {
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                isVerified: user.isVerified,
+                status: user.status
+            }
+        };
+
+        // If mentor, fetch mentor profile
+        if (user.role === 'mentor') {
+            const mentorProfile = await MentorProfile.findOne({ mentorId: userId });
+            if (mentorProfile) {
+                profile.mentorProfile = mentorProfile;
+            }
+        }
+
+        res.status(200).json(profile);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching profile', error: error.message });
+    }
+};
+
+exports.initiateEmailChange = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { currentEmail } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        if (user.email !== currentEmail) {
+            return res.status(400).json({ message: 'Current email does not match.' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpires = Date.now() + 10 * 60 * 1000;
+
+        user.otp = otp;
+        user.otpExpires = otpExpires;
+        await user.save();
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: "MindComfort Email Change Verification",
+                message: `You requested to change your email. Your verification code is: ${otp}. It expires in 10 minutes.`,
+            });
+
+            res.status(200).json({
+                message: "OTP sent to your current email. Please verify to proceed.",
+                step: "verify-current"
+            });
+        } catch (emailError) {
+            return res.status(500).json({
+                message: "Failed to send verification email.",
+                error: emailError.message,
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Error initiating email change', error: error.message });
+    }
+};
+
+exports.verifyCurrentEmailOTP = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { otp } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        if (user.otp !== otp) {
+            return res.status(400).json({ message: 'Invalid OTP.' });
+        }
+
+        if (user.otpExpires < Date.now()) {
+            return res.status(400).json({ message: 'OTP has expired.' });
+        }
+
+        user.otp = undefined;
+        user.otpExpires = undefined;
+        await user.save();
+
+        res.status(200).json({
+            message: "Current email verified. Please provide your new email.",
+            step: "set-new-email"
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error verifying current email', error: error.message });
+    }
+};
+
+exports.setNewEmail = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { newEmail } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        const emailExists = await User.findOne({ email: newEmail });
+        if (emailExists) {
+            return res.status(400).json({ message: 'Email already in use.' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpires = Date.now() + 10 * 60 * 1000;
+
+        user.otp = otp;
+        user.otpExpires = otpExpires;
+        await user.save();
+
+        try {
+            await sendEmail({
+                email: newEmail,
+                subject: "MindComfort New Email Verification",
+                message: `Please verify your new email address. Your verification code is: ${otp}. It expires in 10 minutes.`,
+            });
+
+            res.status(200).json({
+                message: "OTP sent to your new email. Please verify to complete the change.",
+                step: "verify-new"
+            });
+        } catch (emailError) {
+            return res.status(500).json({
+                message: "Failed to send verification email to new address.",
+                error: emailError.message,
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Error setting new email', error: error.message });
+    }
+};
+
+exports.verifyNewEmailOTP = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { otp, newEmail } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        if (user.otp !== otp) {
+            return res.status(400).json({ message: 'Invalid OTP.' });
+        }
+
+        if (user.otpExpires < Date.now()) {
+            return res.status(400).json({ message: 'OTP has expired.' });
+        }
+
+        user.email = newEmail;
+        user.otp = undefined;
+        user.otpExpires = undefined;
+        await user.save();
+
+        res.status(200).json({
+            message: "Email updated successfully.",
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error verifying new email', error: error.message });
+    }
+};
+
+exports.updateUserCredentials = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { currentPassword, newPassword, confirmPassword } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        if (newPassword) {
+            if (!currentPassword) {
+                return res.status(400).json({ message: 'Current password is required to change password.' });
+            }
+
+            const isMatch = await bcrypt.compare(currentPassword, user.password);
+            if (!isMatch) {
+                return res.status(400).json({ message: 'Current password is incorrect.' });
+            }
+
+            if (newPassword !== confirmPassword) {
+                return res.status(400).json({ message: 'New passwords do not match.' });
+            }
+
+            const validationErrors = passwordSchema.validate(newPassword, { list: true });
+            if (validationErrors.length > 0) {
+                return res.status(400).json({
+                    message: 'New password is too weak.',
+                    failedRules: validationErrors
+                });
+            }
+
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+            user.password = hashedPassword;
+            user.tokenVersion += 1;
+        }
+
+        await user.save();
+
+        res.status(200).json({
+            message: 'Password updated successfully.',
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating credentials', error: error.message });
+    }
+};
+
+exports.updateMentorProfile = async (req, res) => {
+    try {
+        const mentorId = req.params.mentorId;
+        const { fullName, qualification, experience, expertise } = req.body;
+
+        const user = await User.findById(mentorId);
+        if (!user || user.role !== 'mentor') {
+            return res.status(404).json({ message: 'Mentor not found.' });
+        }
+
+        let mentorProfile = await MentorProfile.findOne({ mentorId });
+        if (!mentorProfile) {
+            return res.status(404).json({ message: 'Mentor profile not found. Profile is created after admin approval.' });
+        }
+
+        if (fullName) mentorProfile.fullName = fullName;
+        if (qualification) mentorProfile.qualification = qualification;
+        if (experience) mentorProfile.experience = experience;
+        if (expertise) mentorProfile.expertise = expertise;
+
+        await mentorProfile.save();
+
+        res.status(200).json({
+            message: 'Mentor profile updated successfully.',
+            mentorProfile
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating mentor profile', error: error.message });
+    }
+};
+
+exports.addAvailabilitySlot = async (req, res) => {
+    try {
+        const mentorId = req.params.mentorId;
+        const { day, date, startTime, endTime } = req.body;
+
+        if (!day && !date) {
+            return res.status(400).json({ message: 'Either day or date must be provided.' });
+        }
+
+        if (day && date) {
+            return res.status(400).json({ message: 'Provide either day or date, not both.' });
+        }
+
+        if (!startTime || !endTime) {
+            return res.status(400).json({ message: 'Start time and end time are required.' });
+        }
+
+        const user = await User.findById(mentorId);
+        if (!user || user.role !== 'mentor') {
+            return res.status(404).json({ message: 'Mentor not found.' });
+        }
+
+        let mentorProfile = await MentorProfile.findOne({ mentorId });
+        if (!mentorProfile) {
+            return res.status(404).json({ message: 'Mentor profile not found.' });
+        }
+
+        const newSlot = {
+            day: day || undefined,
+            date: date ? new Date(date) : undefined,
+            startTime,
+            endTime,
+        };
+
+        mentorProfile.availabilitySchedule.push(newSlot);
+        await mentorProfile.save();
+
+        res.status(201).json({
+            message: 'Availability slot added successfully.',
+            slot: mentorProfile.availabilitySchedule[mentorProfile.availabilitySchedule.length - 1]
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error adding availability slot', error: error.message });
+    }
+};
+
+exports.updateAvailabilitySlot = async (req, res) => {
+    try {
+        const { mentorId, slotId } = req.params;
+        const { day, date, startTime, endTime } = req.body;
+
+        if (day && date) {
+            return res.status(400).json({ message: 'Provide either day or date, not both.' });
+        }
+
+        const user = await User.findById(mentorId);
+        if (!user || user.role !== 'mentor') {
+            return res.status(404).json({ message: 'Mentor not found.' });
+        }
+
+        let mentorProfile = await MentorProfile.findOne({ mentorId });
+        if (!mentorProfile) {
+            return res.status(404).json({ message: 'Mentor profile not found.' });
+        }
+
+        const slot = mentorProfile.availabilitySchedule.id(slotId);
+        if (!slot) {
+            return res.status(404).json({ message: 'Availability slot not found.' });
+        }
+
+        if (day !== undefined) slot.day = day;
+        if (date !== undefined) slot.date = new Date(date);
+        if (startTime) slot.startTime = startTime;
+        if (endTime) slot.endTime = endTime;
+
+        await mentorProfile.save();
+
+        res.status(200).json({
+            message: 'Availability slot updated successfully.',
+            slot
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating availability slot', error: error.message });
+    }
+};
+
+exports.deleteAvailabilitySlot = async (req, res) => {
+    try {
+        const { mentorId, slotId } = req.params;
+
+        const user = await User.findById(mentorId);
+        if (!user || user.role !== 'mentor') {
+            return res.status(404).json({ message: 'Mentor not found.' });
+        }
+
+        let mentorProfile = await MentorProfile.findOne({ mentorId });
+        if (!mentorProfile) {
+            return res.status(404).json({ message: 'Mentor profile not found.' });
+        }
+
+        mentorProfile.availabilitySchedule.id(slotId).deleteOne();
+        await mentorProfile.save();
+
+        res.status(200).json({
+            message: 'Availability slot deleted successfully.'
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting availability slot', error: error.message });
+    }
+};

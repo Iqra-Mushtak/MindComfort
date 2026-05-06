@@ -3,6 +3,7 @@ const passwordSchema = require('../utils/passwordValidator');
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 const MentorApplication = require("../models/MentorApplication");
+const MentorProfile = require("../models/MentorProfile");
 const jwt = require('jsonwebtoken');
 
 exports.createAdmin = async (req, res) => {
@@ -318,6 +319,22 @@ exports.adminReviewMentor = async (req, res) => {
     mentor.status = decision;
     await mentor.save();
 
+    const mentorApplication = await MentorApplication.findOne({ mentorId });
+
+    if (decision === "approved" && mentorApplication) {
+      const existingProfile = await MentorProfile.findOne({ mentorId });
+      if (!existingProfile) {
+        const newMentorProfile = new MentorProfile({
+          mentorId: mentor._id,
+          fullName: mentorApplication.fullName,
+          qualification: mentorApplication.qualification,
+          experience: mentorApplication.experience,
+          expertise: mentorApplication.expertise,
+        });
+        await newMentorProfile.save();
+      }
+    }
+
     await MentorApplication.findOneAndUpdate(
       { mentorId },
       { status: decision },
@@ -542,7 +559,7 @@ exports.resetPassword = async (req, res) => {
 
 exports.logout = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id || req.user.id);
+    const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
