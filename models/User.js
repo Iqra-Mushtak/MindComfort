@@ -70,6 +70,10 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false, //for rejected mentors
     },
+    isSuspended: {
+        type: Boolean,
+        default: false, 
+    },
 },
     { timestamps: true }); //createdAt tracking
 

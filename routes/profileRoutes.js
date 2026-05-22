@@ -5,9 +5,7 @@ const { getProfile, updateUserCredentials, updateMentorProfile, addAvailabilityS
 const { protect, mentorOnly } = require('../middleware/authmiddleware');
 
 router.get('/:userId', getProfile);
-
 router.put('/:userId', protect, updateUserCredentials);
-
 router.post('/:userId/change-email/initiate', protect, initiateEmailChange);
 router.post('/:userId/change-email/verify-current', protect, verifyCurrentEmailOTP);
 router.post('/:userId/change-email/set-new', protect, setNewEmail);

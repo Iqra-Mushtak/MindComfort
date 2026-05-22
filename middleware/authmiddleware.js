@@ -51,6 +51,15 @@ const adminOnly = (req, res, next) => {
     }
 };
 
+const adminOrModerator = (req, res, next) => {
+
+    if (req.user && (req.user.role === 'admin' || req.user.role === 'moderator')) {
+        next(); 
+    } else {
+        res.status(403).json({ message: "Access denied. Admins or moderators only." });
+    }
+};
+
 const mentorOnly = (req, res, next) => {
     if (req.user && req.user.role === 'mentor') {
         next();
@@ -59,4 +68,4 @@ const mentorOnly = (req, res, next) => {
     }
 };
 
-module.exports = { protect, adminOnly, mentorOnly };
+module.exports = { protect, adminOnly, adminOrModerator, mentorOnly };
