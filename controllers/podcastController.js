@@ -59,5 +59,55 @@ const createPodcast = async (req, res) => {
         });
     }
 };
-module.exports = { createPodcast };
     
+const getPendingPodcasts = async (req, res) => {
+    try {
+        const pendingPodcasts = await Podcast.find({ approvalStatus: 'pending' })
+        .populate('speaker', 'name email')
+        .sort({ startTime: 1 });
+
+        res.status(200).json({
+            success: true,
+            count: pendingPodcasts.length,
+            data: pendingPodcasts,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to retrieve pending podcasts',
+        });
+    }
+};
+
+const updatePodcastApproval = async (req, res) => {
+    try {
+        const { approvalStatus } = req.body;
+
+        if (!approvalStatus || !['approved', 'rejected'].includes(approvalStatus)) {
+            return res.status(400).json({ message: 'Invalid approval status. Must be either "approved" or "rejected".' });
+        }
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast) {
+            return res.status(404).json({ message: 'Podcast listing not found' });
+        }
+        if (podcast.approvalStatus !== 'pending') {
+            return res.status(400).json({ message: 'Only pending podcast sessions can be updated' });
+        }
+        podcast.approvalStatus = approvalStatus;
+        await podcast.save();
+
+        res.status(200).json({
+            success: true,
+            message: `Podcast session has been ${approvalStatus}.`,
+            data: podcast,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to update podcast approval status',
+        });
+    }
+};
+module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval };
