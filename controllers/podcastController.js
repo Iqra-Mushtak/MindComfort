@@ -110,4 +110,24 @@ const updatePodcastApproval = async (req, res) => {
         });
     }
 };
-module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval };
+
+const getApprovedPodcasts = async (req, res) => {
+    try {
+        const approvedPodcasts = await Podcast.find({ approvalStatus: 'approved' })
+        .populate('speaker', 'name email')
+        .sort({ startTime: 1 });
+
+        res.status(200).json({
+            success: true,
+            count: approvedPodcasts.length,
+            data: approvedPodcasts,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to retrieve approved podcasts',
+        });
+    }
+};
+module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts };
