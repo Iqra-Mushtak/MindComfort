@@ -1,4 +1,5 @@
 const Podcast = require('../models/Podcast');
+const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 
 const createPodcast = async (req, res) => {
     try {
@@ -130,4 +131,83 @@ const getApprovedPodcasts = async (req, res) => {
         });
     }
 };
-module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts };
+
+const startPodcastStream = async (req, res) => {
+    try {
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast) {
+            return res.status(404).json({ message: 'Podcast session not found' });
+        }
+        if (podcast.speaker.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ message: 'You are not authorized to start this podcast session' });
+        }
+        if (podcast.approvalStatus !== 'approved') {
+            return res.status(400).json({ message: 'Only approved podcast sessions can be started' });
+        }
+        if (podcast.streamStatus !== 'scheduled') {
+            return res.status(400).json({ message: 'This podcast session has already been started or ended' });
+        }
+        const channelName = podcast._id.toString();
+        const uid = 0;
+        const role = RtcRole.PUBLISHER;
+        const expirationTime = 7200;
+        const currentTimestamp = Math.floor(Date.now() / 1000);
+        const privilegeExpiredTs = currentTimestamp + expirationTime;
+
+        const rtcToken = RtcTokenBuilder.buildTokenWithUid(
+            process.env.AGORA_APP_ID, 
+            process.env.AGORA_APP_CERTIFICATE, 
+            channelName, 
+            uid, 
+            role, 
+            privilegeExpiredTs
+        );
+        podcast.streamStatus = 'live';
+        await podcast.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Podcast stream started successfully',
+            token: rtcToken,
+            channelName: channelName,
+            data: podcast
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to start podcast stream',
+        });
+    }
+};
+
+const endPodcastStream = async (req, res) => {
+    try {
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast) {
+            return res.status(404).json({ message: 'Podcast not found' });
+        }
+        if (podcast.speaker.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ message: 'Access denied.' });
+        }
+        if (podcast.streamStatus !== 'live') {
+            return res.status(400).json({ message: 'Podcast stream is not currently live' });
+        }
+        podcast.streamStatus = 'ended';
+        await podcast.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Podcast stream ended successfully',
+            data: podcast,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to end podcast stream',
+        });
+    }
+};
+
+module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream };
