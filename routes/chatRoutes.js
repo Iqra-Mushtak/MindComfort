@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const {protect, adminOnly} = require('../middleware/authmiddleware');
+const {protect, adminOnly, adminOrModerator} = require('../middleware/authmiddleware');
 
 const { getChatrooms, getChatroomById, getChatMessages, reportMessage, createChatroom, updateChatroom, deleteChatroom, getReports, reviewReports } = require('../controllers/chatController');
 router.get('/', protect, getChatrooms);

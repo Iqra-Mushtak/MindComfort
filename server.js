@@ -9,10 +9,13 @@ require('dotenv').config();
 
 const User = require('./models/User');
 const MentorApplication = require('./models/MentorApplication');
+const MentorProfile = require('./models/MentorProfile');
 const Chatroom = require('./models/Chatroom');
 const ChatMessage = require('./models/ChatMessage');
 const ChatReport = require('./models/ChatReports');
 const ClientAnonymousSession = require('./models/ClientAnonymousSession');
+const Podcast = require('./models/Podcast');
+const PodcastComment = require('./models/PodcastComment');
 
 const app = express();
 const server = http.createServer(app);
@@ -29,10 +32,12 @@ app.use(express.json());
 const authRoutes = require('./routes/authRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const podcastRoutes = require('./routes/podcastRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/podcasts', podcastRoutes);
 
 app.get('/', (req, res) => {
     res.send("The MindComfort Backend is officially running!");
