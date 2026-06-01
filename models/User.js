@@ -81,4 +81,9 @@ const userSchema = new mongoose.Schema({
 },
     { timestamps: true }); //createdAt tracking
 
+userSchema.index({ createdAt: 1 }, { 
+    expireAfterSeconds: 15 * 24 * 60 * 60, 
+    partialFilterExpression: { isVerified: false } 
+});
+
 module.exports = mongoose.model('User', userSchema);

@@ -42,21 +42,6 @@ app.get('/', (req, res) => {
 
 cron.schedule('0 0 * * *', async () => {
     try {
-        const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
-        const result = await User.deleteMany({ 
-            isVerified: false, 
-            createdAt: { $lt: fifteenDaysAgo } 
-        });
-        if (result.deletedCount > 0) {
-            console.log(`[Cron] Cleaned up ${result.deletedCount} unverified users.`);
-        }
-    } catch (err) {
-        console.error('[Cron Error] OTP Cleanup:', err.message);
-    }
-});
-
-cron.schedule('0 1 * * *', async () => {
-    try {
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         
         const rejectedUsers = await User.find({ 
@@ -81,7 +66,7 @@ cron.schedule('0 1 * * *', async () => {
     }
 });
 
-cron.schedule('0 2 * * *', async () => {
+cron.schedule('0 1 * * *', async () => {
     try {
         const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const result = await User.updateMany(
