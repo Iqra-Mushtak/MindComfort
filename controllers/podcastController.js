@@ -210,4 +210,44 @@ const endPodcastStream = async (req, res) => {
     }
 };
 
-module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream };
+const joinPodcastStream = async (req, res) => {
+    try{
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast){
+            return res.status(404).json({message: 'Podcast session not found.'});
+        }
+        if (podcast.streamStatus !== 'live'){
+            return res.status(400).json({message: 'This podcast session is not currently live.'});
+        }
+        const channelName = podcast._id.toString();
+        const uid = 0;
+        const role = RtcRole.SUBSCRIBER;
+        const expirationTime = 7200;
+        const currentTimestamp = Math.floor(Date.now() / 1000);
+        const privilegeExpiredTs = currentTimestamp + expirationTime;
+
+        const rtcToken = RtcTokenBuilder.buildTokenWithUid(
+            process.env.AGORA_APP_ID,
+            process.env.AGORA_APP_CERTIFICATE,
+            channelName,
+            uid,
+            role,
+            privilegeExpiredTs
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Connected successfully',
+            token: rtcToken,
+            channelName: channelName
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to connect with live session'
+        });
+    }
+};
+
+module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream, joinPodcastStream };
