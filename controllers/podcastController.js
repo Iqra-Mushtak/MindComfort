@@ -1,5 +1,8 @@
 const Podcast = require('../models/Podcast');
+const PodcastComment = require('../models/PodcastComment');
 const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
+const { v4: uuidv4 } = require('uuid');
+const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 
 const createPodcast = async (req, res) => {
     try {
@@ -219,6 +222,15 @@ const joinPodcastStream = async (req, res) => {
         if (podcast.streamStatus !== 'live'){
             return res.status(400).json({message: 'This podcast session is not currently live.'});
         }
+
+        const secureAnonymousId = uuidv4();
+        const anonymousSession = await ClientAnonymousSession.create({
+            userId: req.user._id,
+            chatroomId: podcast._id,
+            anonymousId: secureAnonymousId,
+        });
+        await anonymousSession.save();
+
         const channelName = podcast._id.toString();
         const uid = 0;
         const role = RtcRole.SUBSCRIBER;
@@ -239,7 +251,9 @@ const joinPodcastStream = async (req, res) => {
             success: true,
             message: 'Connected successfully',
             token: rtcToken,
-            channelName: channelName
+            channelName: channelName,
+            anonymousId: secureAnonymousId,
+            sessionId: anonymousSession._id,
         });
     } catch (error) {
         res.status(500).json({
@@ -250,4 +264,78 @@ const joinPodcastStream = async (req, res) => {
     }
 };
 
-module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream, joinPodcastStream };
+const addPodcastComment = async (req, res) => {
+    try{
+        const { content, anonymousId } = req.body;
+        if (!content || content.trim() === '') {
+            return res.status(400).json({message: 'Writing a comment is required.'});
+        }
+        if(!anonymousId){
+            return res.status(400).json({message: 'Anonymous session ID is required to submit a comment.'});
+        }
+
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast){
+            return res.status(404).json({message: 'Podcast session not found.'});
+        }
+
+        const PodcastComment = require('../models/PodcastComment');
+        const comment = await PodcastComment.create({
+            podcastId: req.params.id,
+            user: req.user._id,
+            anonymousId: anonymousId,
+            content: content.trim(),
+        });
+
+        res.status(201).json({
+            success: true,
+            message: 'Comment submitted successfully to the host mentor.',
+            data: {
+                _id: comment._id,
+                podcastId: comment.podcastId,
+                anonymousId: comment.anonymousId,
+                content: comment.content,
+                createdAt: comment.createdAt,
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to submit comment',
+        });
+    }
+};
+
+const getPodcastComments = async (req, res) => {
+    try {
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast) {
+            return res.status(404).json({ message: 'Podcast session not found.' });
+        }
+        if (podcast.speaker.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ message: 'Access denied. Only the host mentor can view comments.' });
+        }
+        const PodcastComment = require('../models/PodcastComment');
+        const {v5: uuidv5} = require('uuid');
+
+        const comments = await PodcastComment
+        .find({ podcastId: req.params.id })
+        .select('-user')
+        .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            success: true,
+            count: comments.length,
+            data: comments,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to retrieve comments',
+        });
+    }
+};
+
+module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream, joinPodcastStream, addPodcastComment, getPodcastComments };

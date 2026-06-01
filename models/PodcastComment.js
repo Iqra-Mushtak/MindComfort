@@ -11,6 +11,10 @@ const podcastCommentSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    anonymousId: {
+        type: String,
+        required: true,
+    },
     content: {
         type: String,
         required: true,
