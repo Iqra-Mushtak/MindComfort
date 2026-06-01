@@ -287,6 +287,15 @@ const addPodcastComment = async (req, res) => {
             content: content.trim(),
         });
 
+        const io = req.app.get('io');
+        io.to(podcast._id.toString()).emit('newComment', {
+            _id: comment._id,
+            podcastId: comment.podcastId,
+            anonymousId: comment.anonymousId,
+            content: comment.content,
+            createdAt: comment.createdAt,
+        });
+
         res.status(201).json({
             success: true,
             message: 'Comment submitted successfully to the host mentor.',
