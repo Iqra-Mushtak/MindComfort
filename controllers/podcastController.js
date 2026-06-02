@@ -4,6 +4,7 @@ const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const { v4: uuidv4 } = require('uuid');
 const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 const axios = require('axios');
+const { getAgoraRestHeaders } = require('../config/agoraConfig');
 
 const createPodcast = async (req, res) => {
     try {
@@ -193,14 +194,14 @@ const startPodcastStream = async (req, res) => {
                         streamTypes: 0,
                         channelType: 0
                     },
-                    storageConfig: {
-                        vendor: 1,
-                        region: 0,
-                        bucket: process.env.FIREBASE_STORAGE_BUCKET_NAME,
-                        accessKey: process.env.FIREBASE_ACCESS_KEY,
-                        secretKey: process.env.FIREBASE_SECRET_KEY,
-                        fileNamePrefix: `podcast_recordings/${podcast._id}`
-                    }
+                    // storageConfig: {
+                    //     vendor: 1,
+                    //     region: 0,
+                    //     bucket: process.env.FIREBASE_STORAGE_BUCKET_NAME,
+                    //     accessKey: process.env.FIREBASE_ACCESS_KEY,
+                    //     secretKey: process.env.FIREBASE_SECRET_KEY,
+                    //     fileNamePrefix: `podcast_recordings/${podcast._id}`
+                    // }
                 }
             },
             { headers }
@@ -211,6 +212,8 @@ const startPodcastStream = async (req, res) => {
     }
 
         podcast.streamStatus = 'live';
+        podcast.agoraResourceId = resourceId;
+        podcast.agoraSid = recordingSid;
         await podcast.save();
 
         res.status(200).json({
@@ -296,6 +299,7 @@ const joinPodcastStream = async (req, res) => {
         const anonymousSession = await ClientAnonymousSession.create({
             userId: req.user._id,
             chatroomId: podcast._id,
+            onModel: 'Podcast',
             anonymousId: secureAnonymousId,
         });
         await anonymousSession.save();
@@ -348,7 +352,6 @@ const addPodcastComment = async (req, res) => {
             return res.status(404).json({message: 'Podcast session not found.'});
         }
 
-        const PodcastComment = require('../models/PodcastComment');
         const comment = await PodcastComment.create({
             podcastId: req.params.id,
             user: req.user._id,
@@ -394,7 +397,6 @@ const getPodcastComments = async (req, res) => {
         if (podcast.speaker.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Access denied. Only the host mentor can view comments.' });
         }
-        const PodcastComment = require('../models/PodcastComment');
         const {v5: uuidv5} = require('uuid');
 
         const comments = await PodcastComment

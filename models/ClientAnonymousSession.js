@@ -8,13 +8,17 @@ const clientAnonymousSessionSchema = new mongoose.Schema({
     },
     chatroomId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Chatroom',
         required: true,
+        refPath: 'onModel',
+    },
+    onModel: {
+        type: String,
+        required: true,
+        enum: ['Podcast', 'Chatroom'],
     },
     anonymousId: {
         type: String,
         required: true,
-        unique: true,
         trim: true,
     },
     isActive: {
@@ -23,6 +27,6 @@ const clientAnonymousSessionSchema = new mongoose.Schema({
     },
 }, { timestamps: true });
 
-clientAnonymousSessionSchema.index({ userId: 1, chatroomId: 1 }, { unique: true });
+clientAnonymousSessionSchema.index({ userId: 1, chatroomId: 1 });
 
 module.exports = mongoose.model('ClientAnonymousSession', clientAnonymousSessionSchema);

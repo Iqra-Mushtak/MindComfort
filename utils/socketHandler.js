@@ -3,7 +3,7 @@ const {v4: uuidv4 } = require('uuid');
 const mongoose = require('mongoose');
 
 const Chatroom = require('./models/Chatroom');
-const chatMessage = require('./models/ChatMessage');
+const ChatMessage = require('./models/ChatMessage');
 const ClientAnonymousSession = require('./models/ClientAnonymousSession');
 
 const initSocket = (server) => {
@@ -51,6 +51,7 @@ io.on('connection', (socket) => {
                 const anonymousSession = new ClientAnonymousSession({
                     userId: socket.user._id,
                     chatroomId: chatroomId,
+                    onModel: 'Chatroom',
                     anonymousId: secureUuid,
                 });
                 await anonymousSession.save();
