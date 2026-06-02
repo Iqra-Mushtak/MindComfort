@@ -46,6 +46,18 @@ const podcastSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
+    },
+    agoraResourceId: {
+        type: String,
+        default: null
+    },
+    agoraSid: {
+        type: String,
+        default: null
+    },
+    recordingUrl: {
+        type: String,
+        default: null
     }
 });
 

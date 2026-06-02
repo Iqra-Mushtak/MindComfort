@@ -3,6 +3,7 @@ const PodcastComment = require('../models/PodcastComment');
 const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const { v4: uuidv4 } = require('uuid');
 const ClientAnonymousSession = require('../models/ClientAnonymousSession');
+const axios = require('axios');
 
 const createPodcast = async (req, res) => {
     try {
@@ -165,6 +166,50 @@ const startPodcastStream = async (req, res) => {
             role, 
             privilegeExpiredTs
         );
+
+        let resourceId = null;
+        let recordingSid = null;
+        try{
+            const headers = getAgoraRestHeaders();
+
+            const aquireResponse = await axios.post(
+                `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/acquire`,
+                {
+                    cname: channelName,
+                    uid: "999",
+                    clientRequest: {resourceExpiredHour: 24, scene: 0}
+                },
+                { headers }
+            );
+        resourceId = aquireResponse.data.resourceId;
+        const startResponse = await axios.post(
+            `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceId/${resourceId}/mode/mix/start`,
+            {
+                cname: channelName,
+                uid: "999",
+                clientRequest: {
+                    recordingConfig: {
+                        maxIdleTime: 30,
+                        streamTypes: 0,
+                        channelType: 0
+                    },
+                    storageConfig: {
+                        vendor: 1,
+                        region: 0,
+                        bucket: process.env.FIREBASE_STORAGE_BUCKET_NAME,
+                        accessKey: process.env.FIREBASE_ACCESS_KEY,
+                        secretKey: process.env.FIREBASE_SECRET_KEY,
+                        fileNamePrefix: `podcast_recordings/${podcast._id}`
+                    }
+                }
+            },
+            { headers }
+        );
+        recordingSid = startResponse.data.sid;
+    } catch (recordingError) {
+        console.error('Failed to start Agora recording:', recordingError.message);
+    }
+
         podcast.streamStatus = 'live';
         await podcast.save();
 
@@ -196,6 +241,30 @@ const endPodcastStream = async (req, res) => {
         if (podcast.streamStatus !== 'live') {
             return res.status(400).json({ message: 'Podcast stream is not currently live' });
         }
+
+        if(podcast.agoraResourceId && podcast.agoraSid){
+            try{
+                const headers = getAgoraRestHeaders();
+
+                const stopResponse = await axios.post(
+                    `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceId/${podcast.agoraResourceId}/sid/${podcast.agoraSid}/mode/mix/stop`,
+                    {
+                        cname: podcast._id.toString(),
+                        uid: "999",
+                        clientRequest: {}
+                    },
+                    { headers }
+                );
+                const finalFile = stopResponse.data.serverResponse.fileList;
+                if (finalFile) {
+                    podcast.recordingUrl = `https://storage.googleapis.com/${process.env.FIREBASE_STORAGE_BUCKET_NAME}/${finalFile}`;
+                }
+            }
+            catch (recordingError) {
+                console.error('Failed to stop Agora recording:', recordingError.message);
+            }
+        }
+
         podcast.streamStatus = 'ended';
         await podcast.save();
 
