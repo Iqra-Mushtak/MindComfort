@@ -22,7 +22,8 @@ const userSchema = new mongoose.Schema({
         type: String, 
         required: true,
         minlength: 6,
-        maxlength: 100
+        maxlength: 100,
+        select: false
     },
 
 //RBAC
@@ -37,7 +38,8 @@ const userSchema = new mongoose.Schema({
         default: false 
     },
     otp: { 
-        type: String 
+        type: String,
+        select: false
     },
     otpExpires: { 
         type: Date 
@@ -56,11 +58,13 @@ const userSchema = new mongoose.Schema({
     resetPasswordToken: {
         type: String,
         default: null,
+        select: false
   },
 
     tokenVersion: {
         type: Number,
         default: 0, //logout from all devices
+        select: false
   },
     lastActive: {
         type: Date,

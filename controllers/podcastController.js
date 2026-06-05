@@ -69,7 +69,7 @@ const createPodcast = async (req, res) => {
 const getPendingPodcasts = async (req, res) => {
     try {
         const pendingPodcasts = await Podcast.find({ approvalStatus: 'pending' })
-        .populate('speaker', 'name email')
+        .populate('speaker', 'username email')
         .sort({ startTime: 1 });
 
         res.status(200).json({
@@ -120,7 +120,7 @@ const updatePodcastApproval = async (req, res) => {
 const getApprovedPodcasts = async (req, res) => {
     try {
         const approvedPodcasts = await Podcast.find({ approvalStatus: 'approved' })
-        .populate('speaker', 'name email')
+        .populate('speaker', 'username email')
         .sort({ startTime: 1 });
 
         res.status(200).json({

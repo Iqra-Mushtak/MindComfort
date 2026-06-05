@@ -4,11 +4,19 @@ const bcrypt = require('bcryptjs');
 const passwordSchema = require('../utils/passwordValidator');
 const sendEmail = require('../utils/sendEmail');
 
+const enforceOwnership = (req, targetId) => {
+    if (!req.user || !req.user._id || !targetId) return true;
+    return req.user._id.toString() !== targetId.toString();
+};
+
 exports.getProfile = async (req, res) => {
     try {
         const userId = req.params.userId;
 
-        const user = await User.findById(userId).select('-password -otp -otpExpires -resetPasswordToken');
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only view your own profile." });
+        }
+        const user = await User.findById(userId).select('-password -otp -otpExpires -resetPasswordToken -pendingEmail');
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
@@ -42,6 +50,10 @@ exports.initiateEmailChange = async (req, res) => {
     try {
         const userId = req.params.userId;
         const { currentEmail } = req.body;
+
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only change your own email." });
+        }
 
         const user = await User.findById(userId);
         if (!user) {
@@ -86,12 +98,15 @@ exports.verifyCurrentEmailOTP = async (req, res) => {
         const userId = req.params.userId;
         const { otp } = req.body;
 
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only verify your own email." });
+        }
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
 
-        if (user.otp !== otp) {
+        if (user.otp !== otp || !user.otp) {
             return res.status(400).json({ message: 'Invalid OTP.' });
         }
 
@@ -117,6 +132,10 @@ exports.setNewEmail = async (req, res) => {
         const userId = req.params.userId;
         const { newEmail } = req.body;
 
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only set a new email for your own profile." });
+        }
+
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
@@ -130,8 +149,7 @@ exports.setNewEmail = async (req, res) => {
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpires = Date.now() + 10 * 60 * 1000;
 
-        user.otp = otp;
-        user.otpExpires = otpExpires;
+        user.pendingEmail = newEmail;
         await user.save();
 
         try {
@@ -161,12 +179,19 @@ exports.verifyNewEmailOTP = async (req, res) => {
         const userId = req.params.userId;
         const { otp, newEmail } = req.body;
 
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only verify your own email." });
+        }
+
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
 
-        if (user.otp !== otp) {
+        if(!user.pendingEmail) {
+            return res.status(400).json({ message: 'No pending email change.' });
+        }
+        if (user.otp !== otp || !user.otp) {
             return res.status(400).json({ message: 'Invalid OTP.' });
         }
 
@@ -174,7 +199,8 @@ exports.verifyNewEmailOTP = async (req, res) => {
             return res.status(400).json({ message: 'OTP has expired.' });
         }
 
-        user.email = newEmail;
+        user.email = user.pendingEmail;
+        user.pendingEmail = undefined;
         user.otp = undefined;
         user.otpExpires = undefined;
         await user.save();
@@ -196,6 +222,10 @@ exports.updateUserCredentials = async (req, res) => {
     try {
         const userId = req.params.userId;
         const { currentPassword, newPassword, confirmPassword } = req.body;
+
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only update your own credentials." });
+        }
 
         const user = await User.findById(userId);
         if (!user) {
@@ -249,6 +279,9 @@ exports.updateMentorProfile = async (req, res) => {
         const mentorId = req.params.mentorId;
         const { fullName, qualification, experience, expertise } = req.body;
 
+        if(enforceOwnership(req, mentorId)) {
+            return res.status(403).json({ message: "Access denied. You can only update your own mentor profile." });
+        }
         const user = await User.findById(mentorId);
         if (!user || user.role !== 'mentor') {
             return res.status(404).json({ message: 'Mentor not found.' });
@@ -280,6 +313,9 @@ exports.addAvailabilitySlot = async (req, res) => {
         const mentorId = req.params.mentorId;
         const { day, date, startTime, endTime } = req.body;
 
+        if(enforceOwnership(req, mentorId)) {
+            return res.status(403).json({ message: "Access denied. You can only update your own mentor profile." });
+        }
         if (!day && !date) {
             return res.status(400).json({ message: 'Either day or date must be provided.' });
         }
@@ -326,6 +362,10 @@ exports.updateAvailabilitySlot = async (req, res) => {
         const { mentorId, slotId } = req.params;
         const { day, date, startTime, endTime } = req.body;
 
+        if(enforceOwnership(req, mentorId)) {
+            return res.status(403).json({ message: "Access denied. You can only update your own availability slots." });
+        }
+
         if (day && date) {
             return res.status(400).json({ message: 'Provide either day or date, not both.' });
         }
@@ -365,6 +405,10 @@ exports.deleteAvailabilitySlot = async (req, res) => {
     try {
         const { mentorId, slotId } = req.params;
 
+        if(enforceOwnership(req, mentorId)) {
+            return res.status(403).json({ message: "Access denied. You can only delete your own availability slots." });
+        }
+
         const user = await User.findById(mentorId);
         if (!user || user.role !== 'mentor') {
             return res.status(404).json({ message: 'Mentor not found.' });
@@ -375,8 +419,13 @@ exports.deleteAvailabilitySlot = async (req, res) => {
             return res.status(404).json({ message: 'Mentor profile not found.' });
         }
 
-        mentorProfile.availabilitySchedule.id(slotId).deleteOne();
-        await mentorProfile.save();
+        const updateResult = await MentorProfile.updateOne(
+            {mentorId, 'availabilitySchedule._id': slotId},
+            { $pull: { availabilitySchedule: { _id: slotId } } }
+        )
+        if (updateResult.matchedCount === 0) {
+            return res.status(404).json({ message: 'Availability slot not found.' });
+        }
 
         res.status(200).json({
             message: 'Availability slot deleted successfully.'

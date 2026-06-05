@@ -4,13 +4,13 @@ const {protect, adminOnly, adminOrModerator} = require('../middleware/authmiddle
 
 const { getChatrooms, getChatroomById, getChatMessages, reportMessage, createChatroom, updateChatroom, deleteChatroom, getReports, reviewReports } = require('../controllers/chatController');
 router.get('/', protect, getChatrooms);
-router.get('/:id', protect, getChatroomById);
-router.get('/:id/messages', protect, getChatMessages);
 router.post('/report', protect, reportMessage);
 router.post('/', protect, adminOnly, createChatroom);
-router.put('/:id', protect, adminOnly, updateChatroom);
-router.delete('/:id', protect, adminOnly, deleteChatroom);
 router.get('/reports/all', protect, adminOrModerator, getReports);
 router.put('/reports/:id/review', protect, adminOrModerator, reviewReports);
+router.get('/:id/messages', protect, getChatMessages);
+router.get('/:id', protect, getChatroomById);
+router.put('/:id', protect, adminOnly, updateChatroom);
+router.delete('/:id', protect, adminOnly, deleteChatroom);
 
 module.exports = router;

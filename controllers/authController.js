@@ -39,20 +39,19 @@ exports.createAdmin = async (req, res) => {
       otpExpires
     });
 
-    await admin.save();
-
     try {
       await sendEmail({
         email: admin.email,
         subject: "Admin Account Setup Verification Code",
         message: `Your admin verification code is: ${otp}. Expires in 10 minutes.`,
       });
+      await admin.save();
+      res.status(201).json({ 
+        message: "Admin account initialized. Please check your email for the verification code." });
     } catch (emailError) {
-      await User.findByIdAndDelete(admin._id);
-      return res.status(500).json({ message: "Failed to send verification email. Admin not created." });
+      return res.status(500).json({ 
+        message: "Failed to send verification email. Admin not created." });
     }
-
-    res.status(201).json({ message: "Admin account initialized. Please check your email for the verification code." });
   } catch (error) {
     res
       .status(500)
@@ -107,6 +106,12 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "User already exists." });
     }
 
+    let assignedRole = 'client';
+    if (role === 'mentor') {
+      assignedRole = 'mentor';
+    } else if (role && role !== 'client') {
+      return res.status(400).json({ message: "Invalid role specified." });
+    }
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = Date.now() + 10 * 60 * 1000;
 
@@ -124,7 +129,7 @@ exports.register = async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      role,
+      role: assignedRole,
       otp,
       otpExpires,
     });
@@ -247,17 +252,27 @@ exports.submitMentorApplication = async (req, res) => {
       declaration,
     } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = req.user;
 
-    if (!user || user.role !== 'mentor') {
+    if (user.role !== 'mentor') {
       return res.status(404).json({ message: "Mentor account not found with this email." });
     }
 
+    if(user.email.toLowerCase() !== email.toLowerCase()) {
+      return res.status(403).json({ message: "Identity mismatch." });
+    }
     if (user.status === 'approved') {
       return res.status(400).json({ message: "Your account is already approved. Please login." });
     }
     if (user.isBlacklisted) {
       return res.status(403).json({ message: "You are ineligible to re-apply." });
+    }
+    const existingApplication = await MentorApplication.findOne({ 
+      mentorId: user._id, 
+      status: 'pending' 
+    });
+    if (existingApplication) {
+      return res.status(400).json({ message: "You already have a pending application. Please wait for admin review." });
     }
 
     const Qualification = qualification?.toLowerCase().trim();
@@ -319,7 +334,7 @@ exports.adminReviewMentor = async (req, res) => {
     mentor.status = decision;
     await mentor.save();
 
-    const mentorApplication = await MentorApplication.findOne({ mentorId });
+    const mentorApplication = await MentorApplication.findOne({ mentorId, status: 'pending' });
 
     if (decision === "approved" && mentorApplication) {
       const existingProfile = await MentorProfile.findOne({ mentorId });
@@ -332,13 +347,17 @@ exports.adminReviewMentor = async (req, res) => {
           expertise: mentorApplication.expertise,
         });
         await newMentorProfile.save();
-      }
+      } 
     }
-
-    await MentorApplication.findOneAndUpdate(
-      { mentorId },
-      { status: decision },
-    );
+       if (mentorApplication){
+        mentorApplication.status = decision;
+        await mentorApplication.save();
+      } else {
+        await MentorApplication.updateMany(
+          { mentorId },
+          { status: decision }
+        );
+      }
 
     const subject =
       decision === "approved"
@@ -418,6 +437,14 @@ exports.login = async (req, res) => {
 
         if (!user.isVerified) {
             return res.status(401).json({ message: "Please verify your email first." });
+        }
+
+        if (user.isBlacklisted) {
+            return res.status(403).json({ message: "Your account has been blacklisted." });
+        }
+        
+        if(user.isSuspended) {
+            return res.status(403).json({ message: "Your account is currently suspended." });
         }
 
         if (user.role === 'mentor' && user.status !== 'approved') {
@@ -538,7 +565,7 @@ exports.resetPassword = async (req, res) => {
         failedRules: validationErrors 
       });
     }
-    const user = await User.findOne({ resetPasswordToken: resetToken });
+    const user = await User.findOne({ resetPasswordToken: resetToken }).select('tokenVersion');
 
     if (!user) {
       return res.status(400).json({ message: "Your session has expired. Please request a new code." });
@@ -546,8 +573,8 @@ exports.resetPassword = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
-    user.tokenVersion +=1;
     user.resetPasswordToken = undefined;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     
     await user.save();
 

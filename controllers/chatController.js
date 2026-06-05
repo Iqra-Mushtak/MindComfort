@@ -121,7 +121,7 @@ exports.getReports = async (req, res) => {
         const reports = await ChatReport.find()
             .sort({ createdAt: -1 })
             .populate('messageId')
-            .populate('reportedBy', 'username email role');
+            .populate('reportedBy', 'username role');
         res.status(200).json(reports);
     } catch (error) {
         res.status(500).json({ message: 'Failed to fetch reports', error: error.message });
@@ -134,6 +134,9 @@ exports.reviewReports = async (req, res) => {
         const report = await ChatReport.findById(req.params.id).populate('messageId');
         if (!report) {
             return res.status(404).json({ message: 'Report not found' });
+        }
+        if(report.status === 'resolved') {
+            return res.status(400).json({ message: 'This report has already been resolved' });
         }
         report.status = 'resolved';
         report.actionTaken = action;

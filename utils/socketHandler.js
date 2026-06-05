@@ -1,34 +1,54 @@
+const jwt = require('jsonwebtoken');
 const {Server} = require('socket.io');
 const {v4: uuidv4 } = require('uuid');
 const mongoose = require('mongoose');
 
-const Chatroom = require('./models/Chatroom');
-const ChatMessage = require('./models/ChatMessage');
-const ClientAnonymousSession = require('./models/ClientAnonymousSession');
+const Chatroom = require('../models/Chatroom');
+const ChatMessage = require('../models/ChatMessage');
+const ClientAnonymousSession = require('../models/ClientAnonymousSession');
+const User = require('../models/User');
 
 const initSocket = (server) => {
 const io = new Server(server, {
     cors: {
         origin: '*',
-        methods: ['GET', 'POST']
+        methods: ['GET', 'POST'],
+        credentials: true
     }
 });
 
 const activeSessions = new Map();
-io.use((socket, next) => {
-    socket.user = {
-        _id : new mongoose.Types.ObjectId(),
-        role: 'client',
-        isSubscribed: true,
-        isActive: true,
-        isSuspended: false,
-    };
-    next();
+io.use(async (socket, next) => {
+    try{
+        const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(' ')[1];
+        if (!token) {
+            return next(new Error('Authentication token is required'));
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.id).select('-password');
+        if (!user) {
+            return next(new Error('User not found'));
+        }
+        if (user.isSuspended || user.isBlacklisted || (user.role === 'mentor' && user.status === 'rejected')) {
+            return next(new Error('User is suspended or rejected'));
+        }
+        socket.user = user;
+        next();
+    } catch (error) {
+        return next(new Error('Invalid authentication token'));
+    }
 });
 
 io.on('connection', (socket) => {
     socket.on('joinRoom', async ({ chatroomId }) => {
+        if (!mongoose.Types.ObjectId.isValid(chatroomId)) {
+            return socket.emit('joinError', 'Invalid chatroom ID');
+        }
         try {
+            const previousSession = activeSessions.get(socket.id);
+            if (previousSession) {
+                socket.leave(previousSession.chatroomId);
+            }
             const chatroom = await Chatroom.findById(chatroomId);
             if (!chatroom || !chatroom.isActive) {
             return socket.emit('joinError', 'Chatroom not found or is currently inactive');
@@ -59,6 +79,7 @@ io.on('connection', (socket) => {
                 displayIdentity = secureUuid;
             } else {
                 displayIdentity = `${socket.user.fullName || socket.user.username} (Mentor)`;
+                dbSessionId = `staff-${socket.user._id}`;
             }
 
             activeSessions.set(socket.id, {
@@ -135,8 +156,10 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         activeSessions.delete(socket.id);
     });
-});
-return io;
+    socket.on('error', (error) => {
+        console.error(`Socket error for ${socket.id}:`, error.message);
+        activeSessions.delete(socket.id);
+        });
+    });
 };
-
 module.exports = initSocket;

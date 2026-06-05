@@ -52,6 +52,13 @@ mentorProfileSchema.pre('save', function(next) {
             if (!slot.day && !slot.date) {
                 return next(new Error('Each availability slot must have either a day or a date.'));
             }
+            if(slot.startTime && slot.endTime) {
+                const start = parseInt(slot.startTime.replace(':', ''), 10);
+                const end = parseInt(slot.endTime.replace(':', ''), 10);
+                if (start >= end) {
+                return next(new Error('Start time must be before end time in availability slots.'));
+                }
+            }
         }
     }
     next();

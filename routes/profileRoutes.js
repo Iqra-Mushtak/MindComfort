@@ -4,7 +4,7 @@ const router = express.Router();
 const { getProfile, updateUserCredentials, updateMentorProfile, addAvailabilitySlot, updateAvailabilitySlot, deleteAvailabilitySlot, initiateEmailChange, verifyCurrentEmailOTP, setNewEmail, verifyNewEmailOTP } = require('../controllers/profileController');
 const { protect, mentorOnly } = require('../middleware/authmiddleware');
 
-router.get('/:userId', getProfile);
+router.get('/:userId', protect, getProfile);
 router.put('/:userId', protect, updateUserCredentials);
 router.post('/:userId/change-email/initiate', protect, initiateEmailChange);
 router.post('/:userId/change-email/verify-current', protect, verifyCurrentEmailOTP);

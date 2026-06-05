@@ -23,7 +23,10 @@ const io = initSocket(server);
 
 app.set('io', io)
 
-app.use(cors());
+app.use(cors({
+    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    credentials: true
+}));
 app.use(express.json()); 
 
 const authRoutes = require('./routes/authRoutes');
@@ -54,7 +57,8 @@ cron.schedule('0 0 * * *', async () => {
         for (let user of rejectedUsers) {
             await MentorApplication.deleteMany({ mentorId: user._id });
             user.isBlacklisted = true;
-            user.username = "Eradicated_User";
+            user.username = `Eradicated_User_${user._id.toString().substring(0, 8)}`;
+            user.email = `eradicated_${user._id.toString().substring(0, 8)}@mindcomfort.com`;
             user.otp = undefined;
             await user.save();
         }

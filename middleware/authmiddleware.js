@@ -10,7 +10,7 @@ const protect = async (req, res, next) => {
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            const user = await User.findById(decoded.id).select('-password');
+            const user = await User.findById(decoded.id).select('-password +tokenVersion');
 
             if (!user) {
                 return res.status(401).json({ message: 'User no longer exists.' });
@@ -18,6 +18,10 @@ const protect = async (req, res, next) => {
 
             if (user.tokenVersion !== decoded.tokenVersion) {
                 return res.status(401).json({ message: 'Session expired. Please log in again.' });
+            }
+
+            if (user.isSuspended || user.isBlacklisted || (user.role === 'mentor' && user.status === 'rejected')) {
+                return res.status(403).json({ message: 'Your account is currently inactive or suspended.' });
             }
 
             const timeLimit = 15 * 60 * 1000; 
