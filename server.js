@@ -43,6 +43,11 @@ app.get('/', (req, res) => {
     res.send("The MindComfort Backend is officially running!");
 });
 
+app.use((err, req, res, next) => {
+    console.error(err.stack); 
+    res.status(500).json({ message: 'An internal error occurred.' }); 
+});
+
 cron.schedule('0 * * * *', async () => {
     console.log(`Cleaning up stale live podcast sessions}`);
     try {
