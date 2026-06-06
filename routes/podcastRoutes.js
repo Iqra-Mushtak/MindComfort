@@ -5,7 +5,7 @@ const { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPod
 
 router.post('/', protect, mentorOnly, createPodcast);
 router.get('/pending', protect, adminOnly, getPendingPodcasts);
-router.put('/:id/approval', protect, adminOnly, updatePodcastApproval);
+router.patch('/:id/approval', protect, adminOnly, updatePodcastApproval);
 router.get('/approved', protect, getApprovedPodcasts);
 router.put('/:id/start-stream', protect, mentorOnly, startPodcastStream);
 router.put('/:id/end-stream', protect, mentorOnly, endPodcastStream);
