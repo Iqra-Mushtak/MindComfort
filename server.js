@@ -5,6 +5,8 @@ const cron = require('node-cron');
 const http = require('http');
 const {v4: uuidv4 } = require('uuid');
 require('dotenv').config();
+const validateEnv = require('./utils/validateEnv');
+validateEnv();
 
 const User = require('./models/User');
 const MentorApplication = require('./models/MentorApplication');
