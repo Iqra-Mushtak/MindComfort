@@ -224,6 +224,46 @@ exports.verifyNewEmailOTP = async (req, res) => {
     }
 };
 
+exports.changePassword = async (req, res) => {
+    try{
+        const userId = req.params.userId;
+        const { currentPassword, newPassword, confirmPassword } = req.body;
+
+        if (enforceOwnership(req, targetId)){
+            return res.status(403).json({message: "Access Denied. You can only change your own password."})
+        }
+        const user = await User.findById(userId).select('+password');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Incorrect current password.' });
+        }
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ message: 'New passwords do not match.' });
+        }
+
+        const validationErrors = passwordSchema.validate(newPassword, { list: true });
+        if (validationErrors.length > 0) {
+            return res.status(400).json({
+                message: 'New password is too weak.',
+                failedRules: validationErrors
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedPassword;
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+
+        await user.save();
+
+        res.status(200).json({ message: 'Password changed successfully.' });
+    } catch (error){
+        res.status(500).json({ message: 'Error changing password', error: error.message });
+    } 
+};
 exports.updateUserCredentials = async (req, res) => {
     try {
         const userId = req.params.userId;
