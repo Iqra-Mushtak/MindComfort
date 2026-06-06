@@ -5,6 +5,7 @@ const sendEmail = require("../utils/sendEmail");
 const MentorApplication = require("../models/MentorApplication");
 const MentorProfile = require("../models/MentorProfile");
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 exports.createAdmin = async (req, res) => {
   try {
@@ -25,7 +26,8 @@ exports.createAdmin = async (req, res) => {
     }
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = await bcrypt.hash(otp, 10);
     const otpExpires = Date.now() + 10 * 60 * 1000;
 
     const admin = new User({
@@ -35,17 +37,17 @@ exports.createAdmin = async (req, res) => {
       role: "admin",
       isVerified: false,
       status: "approved",
-      otp,
+      otp: otpHash,
       otpExpires
     });
-
+      await admin.save();
     try {
       await sendEmail({
         email: admin.email,
         subject: "Admin Account Setup Verification Code",
         message: `Your admin verification code is: ${otp}. Expires in 10 minutes.`,
       });
-      await admin.save();
+
       res.status(201).json({ 
         message: "Admin account initialized. Please check your email for the verification code." });
     } catch (emailError) {
@@ -112,7 +114,8 @@ exports.register = async (req, res) => {
     } else if (role && role !== 'client') {
       return res.status(400).json({ message: "Invalid role specified." });
     }
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = await bcrypt.hash(otp, 10);
     const otpExpires = Date.now() + 10 * 60 * 1000;
 
     const validationErrors = passwordSchema.validate(password, { list: true });
@@ -130,7 +133,7 @@ exports.register = async (req, res) => {
       email,
       password: hashedPassword,
       role: assignedRole,
-      otp,
+      otp: otpHash,
       otpExpires,
     });
 
@@ -165,12 +168,13 @@ exports.verifyRegisterOTP = async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    if (user.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP code." });
+    if (!user.otpExpires || Date.now() > user.otpExpires) {
+      return res.status(400).json({ message: "OTP has expired." });
     }
 
-    if (user.otpExpires < Date.now()) {
-      return res.status(400).json({ message: "OTP has expired." });
+    const isMatch = await bcrypt.compare(otp, user.otp);
+    if (!isMatch) {
+      return res.status(400).json({message: "Invalid OTP."})
     }
 
     user.isVerified = true;
@@ -211,10 +215,11 @@ exports.resendOTP = async (req, res) => {
         .json({ message: "Account already verified. You can login." });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = await bcrypt.hash(otp,10);
     const otpExpires = Date.now() + 10 * 60 * 1000;
 
-    user.otp = otp;
+    user.otp = otpHash;
     user.otpExpires = otpExpires;
     await user.save();
 
@@ -486,10 +491,12 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: "User with this email does not exist." });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = await bcrypt.hash(otp, 10);
     const otpExpires = Date.now() + 10 * 60 * 1000;
+    
 
-    user.otp = otp;
+    user.otp = otpHash;
     user.otpExpires = otpExpires;
     await user.save();
 
@@ -516,16 +523,20 @@ exports.verifyResetOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const user = await User.findOne({
-      email,
-      otp,
-      otpExpires: { $gt: Date.now() },
-    });
+    const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid or expired OTP." });
+      return res.status(400).json({ message: "User not found." });
     }
 
+    if (!user.otpExpires || Date.now() > user.otpExpires) {
+      return res.status(400).json({ message: "OTP has expired." });
+    }
+
+    const isMatch = await bcrypt.compare(otp, user.otp);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid OTP code." });
+    }
     const resetToken = jwt.sign(
       { id: user._id }, 
       process.env.JWT_SECRET, 
@@ -533,6 +544,8 @@ exports.verifyResetOTP = async (req, res) => {
     );
 
     user.resetPasswordToken = resetToken;
+    user.otp = undefined;
+    user.otpExpires = undefined;
     await user.save();
 
     res.status(200).json({ 

@@ -3,6 +3,7 @@ const MentorProfile = require('../models/MentorProfile');
 const bcrypt = require('bcryptjs');
 const passwordSchema = require('../utils/passwordValidator');
 const sendEmail = require('../utils/sendEmail');
+const crypto = require('crypto');
 
 const enforceOwnership = (req, targetId) => {
     if (!req.user || !req.user._id || !targetId) return true;
@@ -64,10 +65,11 @@ exports.initiateEmailChange = async (req, res) => {
             return res.status(400).json({ message: 'Current email does not match.' });
         }
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp = crypto.randomInt(100000, 999999).toString();
+        const otpHash = await bcrypt.hash(otp, 10);
         const otpExpires = Date.now() + 10 * 60 * 1000;
 
-        user.otp = otp;
+        user.otp = otpHash;
         user.otpExpires = otpExpires;
         await user.save();
 
@@ -105,8 +107,8 @@ exports.verifyCurrentEmailOTP = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
-
-        if (user.otp !== otp || !user.otp) {
+        const isMatch = await bcrypt.compare(otp, user.otp);
+        if (isMatch) {
             return res.status(400).json({ message: 'Invalid OTP.' });
         }
 
@@ -146,10 +148,13 @@ exports.setNewEmail = async (req, res) => {
             return res.status(400).json({ message: 'Email already in use.' });
         }
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp = crypto.randomInt(100000, 999999).toString();
+        const otpHash = await bcrypt.hash(otp, 10);
         const otpExpires = Date.now() + 10 * 60 * 1000;
 
         user.pendingEmail = newEmail;
+        user.otp = otpHash;
+        user.otpExpires = otpExpires;
         await user.save();
 
         try {
@@ -191,7 +196,8 @@ exports.verifyNewEmailOTP = async (req, res) => {
         if(!user.pendingEmail) {
             return res.status(400).json({ message: 'No pending email change.' });
         }
-        if (user.otp !== otp || !user.otp) {
+        const isMatch = await bcrypt.compare(otp, user.otp);
+        if (isMatch) {
             return res.status(400).json({ message: 'Invalid OTP.' });
         }
 
