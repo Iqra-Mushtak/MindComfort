@@ -153,6 +153,10 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('joinPodcastRoom', (podcastId) => {
+        socket.join(`podcast_${podcastId}`);
+        console.log(`Mentor ${socket.user._id} joined podcast room: podcast_${podcastId}`);
+    });
     socket.on('disconnect', () => {
         activeSessions.delete(socket.id);
     });

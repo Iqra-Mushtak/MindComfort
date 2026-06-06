@@ -430,8 +430,8 @@ exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const user = await User.findOne({ email });
-        if (!user) {
+        const user = await User.findOne({ email }).select('+password');
+        if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(400).json({ message: "Invalid Email or Password" });
         }
 
@@ -453,11 +453,6 @@ exports.login = async (req, res) => {
                 rejected: "Your application was not approved."
             };
             return res.status(403).json({ message: statusMsgs[user.status] || "Access Denied" });
-        }
-
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ message: "Invalid Email or Password" });
         }
 
         const token = jwt.sign(

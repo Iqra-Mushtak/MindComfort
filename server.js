@@ -43,6 +43,25 @@ app.get('/', (req, res) => {
     res.send("The MindComfort Backend is officially running!");
 });
 
+cron.schedule('0 * * * *', async () => {
+    console.log(`Cleaning up stale live podcast sessions}`);
+    try {
+        const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000);
+
+        const stalePodcasts = await Podcast.find({ 
+            streamStatus: 'live', 
+            updatedAt: { $lt: cutoff } 
+        });
+        for (const podcast of stalePodcasts) {
+            podcast.streamStatus = 'ended';
+            await podcast.save();
+            console.log(`Ended stale podcast session: ${podcast._id}`);
+        }
+    } catch (err) {
+        console.error('Error during stale podcast cleanup:', err.message);
+    }
+});
+
 cron.schedule('0 0 * * *', async () => {
     try {
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

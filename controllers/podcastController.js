@@ -6,11 +6,24 @@ const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 const axios = require('axios');
 const { getAgoraRestHeaders } = require('../config/agoraConfig');
 
+const isImageUrl = async(url) => {
+    try {
+        const response = await axios.head(url, { timeout: 5000 });
+        const contentType = response.headers['content-type'];
+        return contentType && contentType.startsWith('image/');
+    } catch (error) {
+        return false;
+    }
+};
 const createPodcast = async (req, res) => {
     try {
         const { title, description, startTime, endTime, coverImage } = req.body;
         if (!title || !description || !startTime || !endTime || !coverImage) {
             return res.status(400).json({ message: 'All fields are required' });
+        }
+
+        if (!await isImageUrl(coverImage)) {
+            return res.status(400).json({ message: 'Cover image must be a valid image URL' });
         }
 
         const start = new Date(startTime);
@@ -22,9 +35,6 @@ const createPodcast = async (req, res) => {
         }
         if (start < now) {
             return res.status(400).json({ message: 'Start time must be in the future' });
-        }
-        if (!coverImage.match(/\.(jpg|jpeg|png|gif)$/)) {
-            return res.status(400).json({ message: 'Cover image must be a valid image URL' });
         }
 
         const overLappingPodcast = await Podcast.findOne({
@@ -140,6 +150,23 @@ const getApprovedPodcasts = async (req, res) => {
 const startPodcastStream = async (req, res) => {
     try {
         const podcast = await Podcast.findById(req.params.id);
+        if (podcast.streamStatus === 'live') {
+            if(podcast.speaker.toString() !== req.user._id.toString()){
+                return res.status(400).json({message: 'Unauthorized action.'});
+            }
+            return res.status(200).json({
+                success: true,
+                message: 'Resuming the session.',
+                token: RtcTokenBuilder.buildTokenWithUid(
+                    process.env.AGORA_APP_ID, 
+                    process.env.AGORA_APP_CERTIFICATE,
+                    podcast._id.toString(),
+                    0,
+                    RtcRole.PUBLISHER),
+                channelName: podcast._id.toString(),
+                data: podcast,
+            });
+        }
         if (!podcast) {
             return res.status(404).json({ message: 'Podcast session not found' });
         }
@@ -209,6 +236,12 @@ const startPodcastStream = async (req, res) => {
         recordingSid = startResponse.data.sid;
     } catch (recordingError) {
         console.error('Failed to start Agora recording:', recordingError.message);
+    }
+    if(!recordingSid) {
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to start recording.'
+        });
     }
 
         podcast.streamStatus = 'live';
@@ -360,7 +393,7 @@ const addPodcastComment = async (req, res) => {
         });
 
         const io = req.app.get('io');
-        io.to(podcast._id.toString()).emit('newComment', {
+        io.to(`podcast_${req.params.id}`).emit('newComment', {
             _id: comment._id,
             podcastId: comment.podcastId,
             anonymousId: comment.anonymousId,
@@ -397,7 +430,6 @@ const getPodcastComments = async (req, res) => {
         if (podcast.speaker.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Access denied. Only the host mentor can view comments.' });
         }
-        const {v5: uuidv5} = require('uuid');
 
         const comments = await PodcastComment
         .find({ podcastId: req.params.id })
