@@ -150,6 +150,9 @@ const getApprovedPodcasts = async (req, res) => {
 const startPodcastStream = async (req, res) => {
     try {
         const podcast = await Podcast.findById(req.params.id);
+        if (!podcast) {
+            return res.status(404).json({ message: 'Podcast session not found' });
+        }
         if (podcast.streamStatus === 'live') {
             if(podcast.speaker.toString() !== req.user._id.toString()){
                 return res.status(400).json({message: 'Unauthorized action.'});
@@ -167,9 +170,7 @@ const startPodcastStream = async (req, res) => {
                 data: podcast,
             });
         }
-        if (!podcast) {
-            return res.status(404).json({ message: 'Podcast session not found' });
-        }
+        
         if (podcast.speaker.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'You are not authorized to start this podcast session' });
         }
