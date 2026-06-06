@@ -15,6 +15,7 @@ const ChatReport = require('./models/ChatReports');
 const ClientAnonymousSession = require('./models/ClientAnonymousSession');
 const Podcast = require('./models/Podcast');
 const PodcastComment = require('./models/PodcastComment');
+const sanitize = require('./middleware/sanitize');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +29,7 @@ app.use(cors({
     credentials: true
 }));
 app.use(express.json()); 
+app.use(sanitize); 
 
 const authRoutes = require('./routes/authRoutes');
 const profileRoutes = require('./routes/profileRoutes');
