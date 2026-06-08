@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const {Server} = require('socket.io');
 const {v4: uuidv4 } = require('uuid');
 const mongoose = require('mongoose');
+const redisClient = require('../config/redis');
 
 const Chatroom = require('../models/Chatroom');
 const ChatMessage = require('../models/ChatMessage');
@@ -17,7 +18,6 @@ const io = new Server(server, {
     }
 });
 
-const activeSessions = new Map();
 io.use(async (socket, next) => {
     try{
         const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(' ')[1];
@@ -45,8 +45,9 @@ io.on('connection', (socket) => {
             return socket.emit('joinError', 'Invalid chatroom ID');
         }
         try {
-            const previousSession = activeSessions.get(socket.id);
-            if (previousSession) {
+            const previousSessionRaw = await redisClient.get(`socket:session:${socket.id}`);
+            if (previousSessionRaw) {
+                const previousSession = JSON.parse(previousSessionRaw);
                 socket.leave(previousSession.chatroomId);
             }
             const chatroom = await Chatroom.findById(chatroomId);
@@ -82,13 +83,14 @@ io.on('connection', (socket) => {
                 dbSessionId = `staff-${socket.user._id}`;
             }
 
-            activeSessions.set(socket.id, {
+            const sessionData = {
                 userId: socket.user._id.toString(),
                 chatroomId,
                 sessionId: dbSessionId,
                 anonymousId: displayIdentity,
                 role: socket.user.role,
-            });
+            };
+            await redisClient.setEx(`socket:session:${socket.id}`, 3600, JSON.stringify(sessionData));
             socket.join(chatroomId);
 
             const messages = await ChatMessage.find({ chatroomId , isDeleted: false })
@@ -113,7 +115,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('sendMessage', async ({ chatroomId, content, replyTo }) => {
-        const session = activeSessions.get(socket.id);
+        const sessionRaw = await redisClient.get(`socket:session:${socket.id}`);
+        const session = sessionRaw ? JSON.parse(sessionRaw) : null;
         if (!session || session.chatroomId !== chatroomId) {
             return socket.emit('messageError', 'Connection reference match failed.');
         }
@@ -128,7 +131,6 @@ io.on('connection', (socket) => {
                 replyTo
             });
             await message.save();
-
             const dynamicPayload = {
                 _id: message._id,
                 chatroomId: message.chatroomId,
@@ -145,11 +147,12 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('leaveRoom', () => {
-        const session = activeSessions.get(socket.id);
-        if (session) {
+    socket.on('leaveRoom', async () => {
+        const sessionRaw = await redisClient.get(`socket:session:${socket.id}`);
+        if (sessionRaw) {
+            const session = JSON.parse(sessionRaw);
             socket.leave(session.chatroomId);
-            activeSessions.delete(socket.id);
+            await redisClient.del(`socket:session:${socket.id}`);
         }
     });
 
@@ -157,12 +160,12 @@ io.on('connection', (socket) => {
         socket.join(`podcast_${podcastId}`);
         console.log(`Mentor ${socket.user._id} joined podcast room: podcast_${podcastId}`);
     });
-    socket.on('disconnect', () => {
-        activeSessions.delete(socket.id);
+    socket.on('disconnect', async () => {
+        await redisClient.del(`socket:session:${socket.id}`);
     });
-    socket.on('error', (error) => {
+    socket.on('error', async (error) => {
         console.error(`Socket error for ${socket.id}:`, error.message);
-        activeSessions.delete(socket.id);
+        await redisClient.del(`socket:session:${socket.id}`);
         });
     });
 };
