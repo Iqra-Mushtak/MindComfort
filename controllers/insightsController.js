@@ -4,9 +4,11 @@ const Chatroom = require('../models/Chatroom');
 const ChatReports = require('../models/ChatReports');
 const MentorApplication = require('../models/MentorApplication');
 const Podcast = require('../models/Podcast');
+const redisClient = require('../config/redis');
 
 exports.getAdminDashboardInsights = async (req, res) => {
     try {
+        const date = new Date().toISOString().split('T')[0];
         const [
             users,
             chatrooms,
@@ -16,12 +18,18 @@ exports.getAdminDashboardInsights = async (req, res) => {
         ] = await Promise.all([
             User.find({}),
             Chatroom.find({}),
-            Report.countDocuments({ status: 'pending' }),
+            ChatReports.countDocuments({ status: 'pending' }),
             Podcast.countDocuments({ status: 'pending' }),
+            MentorApplication.countDocuments({status: 'pending'}),
             MentorProfile.find({}),
         ]);
 
-        // Helper: Categorize Users
+        const activityKeys = await redisClient.keys(`activity:chatroom:*:total:${date}`);
+        let messagesToday = 0;
+        for(const key of activityKeys) {
+            messagesToday += parseInt(await redisClient.get(key) || 0);
+        }
+
         const clients = users.filter(u => u.role === 'client');
         const mentors = users.filter(u => u.role === 'mentor');
 
@@ -39,6 +47,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
                 totalChatrooms: chatrooms.length,
                 activeChatrooms: chatrooms.filter(c => c.isActive).length,
                 subscribedClients: clients.filter(c => c.isSubscribed).length,
+                messagesToday: messagesToday,
             },
             moderation: {
                 pendingReports,

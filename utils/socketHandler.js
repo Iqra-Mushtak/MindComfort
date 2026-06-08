@@ -131,6 +131,29 @@ io.on('connection', (socket) => {
                 replyTo
             });
             await message.save();
+
+            const date = new Date().toISOString().split('T')[0];
+            const totalKey = `activity:chatroom:${chatroomId}:total:${date}`; 
+            const roleKey = `activity:chatroom:${chatroomId}:${session.role}:${date}`;
+            const mentorKey = `activity:mentor:${session.userId}:chatroom:${chatroomId}:${date}`;
+            
+            const multi = redisClient.multi();
+            multi.incr(totalKey);
+            multi.incr(roleKey);
+
+            if(session.role === 'mentor') {
+                multi.incr(mentorKey);
+            }
+
+            await multi.exec();
+
+            const TTL = 3546000;
+            await redisClient.expire(totalKey, TTL);
+            await redisClient.expire(roleKey, TTL);
+            if (session.role === 'mentor') {
+                await redisClient.expire(mentorKey, TTL);
+            }
+
             const dynamicPayload = {
                 _id: message._id,
                 chatroomId: message.chatroomId,
