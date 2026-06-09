@@ -47,7 +47,8 @@ const mentorProfileSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 mentorProfileSchema.pre('save', function(next) {
-    if (this.availabilitySchedule) {
+    try{
+        if (this.availabilitySchedule) {
         for (let slot of this.availabilitySchedule) {
             if (!slot.day && !slot.date) {
                 return next(new Error('Each availability slot must have either a day or a date.'));
@@ -61,7 +62,9 @@ mentorProfileSchema.pre('save', function(next) {
             }
         }
     }
+} catch (error){
     next();
+    }
 });
 
 module.exports = mongoose.model('MentorProfile', mentorProfileSchema);

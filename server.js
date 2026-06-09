@@ -53,7 +53,7 @@ app.use((err, req, res, next) => {
 });
 
 cron.schedule('0 * * * *', async () => {
-    console.log(`Cleaning up stale live podcast sessions}`);
+    // console.log(`Cleaning up stale live podcast sessions`);
     try {
         const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000);
 

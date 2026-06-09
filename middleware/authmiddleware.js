@@ -2,9 +2,10 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 const protect = async (req, res, next) => {
+    // console.log("Protect middleware hit");
     let token;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    if (!req.headers.authorization || !req.headers.authorization.startsWith('Bearer')) {
         return res.status(401).json({ message: 'Not authorized, no token.' });
     }
         try {
@@ -12,13 +13,13 @@ const protect = async (req, res, next) => {
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            const user = await User.findById(decoded.id).select('-password +tokenVersion');
+            const user = await User.findById(decoded.id).select('-password');
 
             if (!user) {
                 return res.status(401).json({ message: 'User no longer exists.' });
             }
 
-            if (user.tokenVersion !== decoded.tokenVersion) {
+            if (decoded.tokenVersion !== undefined && user.tokenVersion !== decoded.tokenVersion) {
                 return res.status(401).json({ message: 'Session expired. Please log in again.' });
             }
 
@@ -39,12 +40,14 @@ const protect = async (req, res, next) => {
             req.user = user;
             next();
         } catch (error) {
+            console.error("JWT Auth Error:", error.message);
             res.status(401).json({ message: 'Not authorized, token failed.' });
         }
 };
 
 const adminOnly = (req, res, next) => {
 
+    // console.log("AdminOnly hit");
     if (req.user && req.user.role === 'admin') {
         next(); 
     } else {

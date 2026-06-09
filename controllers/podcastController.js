@@ -4,7 +4,7 @@ const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const { v4: uuidv4 } = require('uuid');
 const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 const axios = require('axios');
-const { getAgoraRestHeaders } = require('../config/agoraConfig');
+const { getAgoraRestHeaders } = require('../config/agora');
 
 const isImageUrl = async(url) => {
     try {

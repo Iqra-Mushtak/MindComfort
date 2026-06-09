@@ -57,14 +57,12 @@ const userSchema = new mongoose.Schema({
 //Session management and security
     resetPasswordToken: {
         type: String,
-        default: null,
-        select: false
+        default: null
   },
 
     tokenVersion: {
         type: Number,
         default: 0, //logout from all devices
-        select: false
   },
     lastActive: {
         type: Date,

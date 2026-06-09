@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 const MentorApplication = require("../models/MentorApplication");
 const MentorProfile = require("../models/MentorProfile");
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
@@ -162,7 +163,7 @@ exports.verifyRegisterOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+otp');
 
     if (!user) {
       return res.status(404).json({ message: "User not found." });
@@ -182,6 +183,11 @@ exports.verifyRegisterOTP = async (req, res) => {
     user.otpExpires = undefined;
     await user.save();
 
+    const token = jwt.sign(
+      { id: user._id, role: user.role, tokenVersion: user.tokenVersion },
+      process.env.JWT_SECRET
+    );
+
     let customMessage = "Email verified successfully!";
 
     if (user.role === "mentor") {
@@ -193,7 +199,7 @@ exports.verifyRegisterOTP = async (req, res) => {
 
     res
       .status(201)
-      .json({ message: customMessage, role: user.role, id: user._id });
+      .json({ message: customMessage, role: user.role, id: user._id, token });
   } catch (error) {
     res.status(500).json({ message: "Server Error", error: error.message });
   }
@@ -324,7 +330,9 @@ exports.submitMentorApplication = async (req, res) => {
 };
 exports.adminReviewMentor = async (req, res) => {
   try {
+    // console.log("Entering adminReviewMentor controller");
     const { mentorId, decision, reason } = req.body;
+    // console.log("Mentor ID received:", mentorId);
 
     if (!["approved", "rejected"].includes(decision)) {
       return res.status(400).json({
@@ -372,7 +380,7 @@ exports.adminReviewMentor = async (req, res) => {
     const htmlContent =
       decision === "approved"
         ? `<h2>Congratulations, ${mentor.username}!</h2>
-         <p>After our interview, we are excited to approve your profile.</p>
+         <p>After the interview, we are excited to approve your profile.</p>
          <p>You can now log in and start your practice.</p>
          <p>Regards</p>
          <p>Team MindComfort</p>`
@@ -401,9 +409,8 @@ exports.adminReviewMentor = async (req, res) => {
       status: mentor.status,
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Admin review failed.", error: error.message });
+    console.error("DEBUG ERROR:", error);
+    res.status(500).json({ message: "Admin review failed.", error: error.message });
   }
 };
 
@@ -414,12 +421,16 @@ exports.getAllApplications = async (req, res) => {
 
     res.status(200).json(applications);
   } catch (error) {
+    console.error("DEBUG ERROR:", error);
     res.status(500).json({ message: "Failed to fetch applications", error: error.message });
   }
 };
 
 exports.getApplicationById = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid ID format. Please check the Application ID." });
+    }
     const application = await MentorApplication.findById(req.params.id)
       .populate('mentorId', 'username email status');
 
@@ -427,6 +438,7 @@ exports.getApplicationById = async (req, res) => {
 
     res.status(200).json(application);
   } catch (error) {
+    console.error("DEBUG ERROR:", error);
     res.status(500).json({ message: "Error fetching application", error: error.message });
   }
 };
@@ -523,10 +535,14 @@ exports.verifyResetOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+otp +otpExpires');
 
     if (!user) {
       return res.status(400).json({ message: "User not found." });
+    }
+
+    if (!user.otp) {
+      return res.status(400).json({ message: "No active OTP found. Please request a new one." });
     }
 
     if (!user.otpExpires || Date.now() > user.otpExpires) {
@@ -565,6 +581,9 @@ exports.resetPassword = async (req, res) => {
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ message: "Passwords do not match." });
     }
+    const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select('+password');
+    if (!user) return res.status(400).json({ message: "Invalid token." });
 
     const validationErrors = passwordSchema.validate(newPassword, { list: true });
     if (validationErrors.length > 0) {
@@ -573,34 +592,37 @@ exports.resetPassword = async (req, res) => {
         failedRules: validationErrors 
       });
     }
-    const user = await User.findOne({ resetPasswordToken: resetToken }).select('tokenVersion');
-
-    if (!user) {
-      return res.status(400).json({ message: "Your session has expired. Please request a new code." });
+    const isSameAsOld = await bcrypt.compare(newPassword, user.password);
+    if (isSameAsOld) {
+      return res.status(400).json({ message: "New password cannot be the same as the old one." });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
-    user.resetPasswordToken = undefined;
     user.tokenVersion = (user.tokenVersion || 0) + 1;
     
     await user.save();
 
     res.status(200).json({ message: "Password updated successfully!" });
   } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: "Reset token has expired." });
+    }
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
 
 exports.logout = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id).select('+tokenVersion');
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
     user.tokenVersion += 1;
     await user.save();
+
+    res.clearCookie('token');
 
     res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
