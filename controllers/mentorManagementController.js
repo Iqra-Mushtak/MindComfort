@@ -14,7 +14,7 @@ exports.suspendMentor = async (req, res) => {
         }
 
         mentor.isSuspended = true;
-        // Invalidate sessions so the mentor is logged out immediately
+        
         mentor.tokenVersion += 1; 
         await mentor.save();
 

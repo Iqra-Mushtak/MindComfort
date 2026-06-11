@@ -60,7 +60,8 @@ exports.initiateEmailChange = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
-
+        console.log("DB Email:", `"${user.email}"`);
+        console.log("Input Email:", `"${currentEmail}"`);
         if (user.email !== currentEmail) {
             return res.status(400).json({ message: 'Current email does not match.' });
         }
@@ -103,12 +104,12 @@ exports.verifyCurrentEmailOTP = async (req, res) => {
         if(enforceOwnership(req, userId)) {
             return res.status(403).json({ message: "Access denied. You can only verify your own email." });
         }
-        const user = await User.findById(userId);
+        const user = await User.findById(userId).select('+otp');
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
         const isMatch = await bcrypt.compare(otp, user.otp);
-        if (isMatch) {
+        if (!isMatch) {
             return res.status(400).json({ message: 'Invalid OTP.' });
         }
 
@@ -188,7 +189,7 @@ exports.verifyNewEmailOTP = async (req, res) => {
             return res.status(403).json({ message: "Access denied. You can only verify your own email." });
         }
 
-        const user = await User.findById(userId);
+        const user = await User.findById(userId).select('+otp');
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
@@ -197,7 +198,7 @@ exports.verifyNewEmailOTP = async (req, res) => {
             return res.status(400).json({ message: 'No pending email change.' });
         }
         const isMatch = await bcrypt.compare(otp, user.otp);
-        if (isMatch) {
+        if (!isMatch) {
             return res.status(400).json({ message: 'Invalid OTP.' });
         }
 
@@ -229,7 +230,7 @@ exports.changePassword = async (req, res) => {
         const userId = req.params.userId;
         const { currentPassword, newPassword, confirmPassword } = req.body;
 
-        if (enforceOwnership(req, targetId)){
+        if (enforceOwnership(req, userId)){
             return res.status(403).json({message: "Access Denied. You can only change your own password."})
         }
         const user = await User.findById(userId).select('+password');
@@ -264,61 +265,61 @@ exports.changePassword = async (req, res) => {
         res.status(500).json({ message: 'Error changing password', error: error.message });
     } 
 };
-exports.updateUserCredentials = async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        const { currentPassword, newPassword, confirmPassword } = req.body;
+// exports.updateUserCredentials = async (req, res) => {
+//     try {
+//         const userId = req.params.userId;
+//         const { currentPassword, newPassword, confirmPassword } = req.body;
 
-        if(enforceOwnership(req, userId)) {
-            return res.status(403).json({ message: "Access denied. You can only update your own credentials." });
-        }
+//         if(enforceOwnership(req, userId)) {
+//             return res.status(403).json({ message: "Access denied. You can only update your own credentials." });
+//         }
 
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
+//         const user = await User.findById(userId);
+//         if (!user) {
+//             return res.status(404).json({ message: 'User not found.' });
+//         }
 
-        if (newPassword) {
-            if (!currentPassword) {
-                return res.status(400).json({ message: 'Current password is required to change password.' });
-            }
+//         if (newPassword) {
+//             if (!currentPassword) {
+//                 return res.status(400).json({ message: 'Current password is required to change password.' });
+//             }
 
-            const isMatch = await bcrypt.compare(currentPassword, user.password);
-            if (!isMatch) {
-                return res.status(400).json({ message: 'Current password is incorrect.' });
-            }
+//             const isMatch = await bcrypt.compare(currentPassword, user.password);
+//             if (!isMatch) {
+//                 return res.status(400).json({ message: 'Current password is incorrect.' });
+//             }
 
-            if (newPassword !== confirmPassword) {
-                return res.status(400).json({ message: 'New passwords do not match.' });
-            }
+//             if (newPassword !== confirmPassword) {
+//                 return res.status(400).json({ message: 'New passwords do not match.' });
+//             }
 
-            const validationErrors = passwordSchema.validate(newPassword, { list: true });
-            if (validationErrors.length > 0) {
-                return res.status(400).json({
-                    message: 'New password is too weak.',
-                    failedRules: validationErrors
-                });
-            }
+//             const validationErrors = passwordSchema.validate(newPassword, { list: true });
+//             if (validationErrors.length > 0) {
+//                 return res.status(400).json({
+//                     message: 'New password is too weak.',
+//                     failedRules: validationErrors
+//                 });
+//             }
 
-            const hashedPassword = await bcrypt.hash(newPassword, 10);
-            user.password = hashedPassword;
-            user.tokenVersion += 1;
-        }
+//             const hashedPassword = await bcrypt.hash(newPassword, 10);
+//             user.password = hashedPassword;
+//             user.tokenVersion += 1;
+//         }
 
-        await user.save();
+//         await user.save();
 
-        res.status(200).json({
-            message: 'Password updated successfully.',
-            user: {
-                id: user._id,
-                username: user.username,
-                email: user.email,
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Error updating credentials', error: error.message });
-    }
-};
+//         res.status(200).json({
+//             message: 'Password updated successfully.',
+//             user: {
+//                 id: user._id,
+//                 username: user.username,
+//                 email: user.email,
+//             }
+//         });
+//     } catch (error) {
+//         res.status(500).json({ message: 'Error updating credentials', error: error.message });
+//     }
+// };
 
 exports.updateMentorProfile = async (req, res) => {
     try {
@@ -365,15 +366,21 @@ exports.addAvailabilitySlot = async (req, res) => {
         if (!day && !date) {
             return res.status(400).json({ message: 'Either day or date must be provided.' });
         }
-
-        if (day && date) {
-            return res.status(400).json({ message: 'Provide either day or date, not both.' });
+        if (date && isNaN(Date.parse(date))) {
+            return res.status(400).json({ message: 'Invalid date format provided.' });
         }
 
         if (!startTime || !endTime) {
             return res.status(400).json({ message: 'Start time and end time are required.' });
         }
-
+            if(startTime && endTime) {
+                const start = parseInt(startTime.replace(':', ''), 10);
+                const end = parseInt(endTime.replace(':', ''), 10);
+                if (start >= end) {
+                return res.status(400).json({ message: 'Start time must be before end time.' });
+                }
+            }
+        
         const user = await User.findById(mentorId);
         if (!user || user.role !== 'mentor') {
             return res.status(404).json({ message: 'Mentor not found.' });
@@ -392,6 +399,7 @@ exports.addAvailabilitySlot = async (req, res) => {
         };
 
         mentorProfile.availabilitySchedule.push(newSlot);
+        mentorProfile.markModified('availabilitySchedule');
         await mentorProfile.save();
 
         res.status(201).json({
@@ -410,10 +418,6 @@ exports.updateAvailabilitySlot = async (req, res) => {
 
         if(enforceOwnership(req, mentorId)) {
             return res.status(403).json({ message: "Access denied. You can only update your own availability slots." });
-        }
-
-        if (day && date) {
-            return res.status(400).json({ message: 'Provide either day or date, not both.' });
         }
 
         const user = await User.findById(mentorId);
