@@ -216,9 +216,12 @@ exports.resendOTP = async (req, res) => {
     }
 
     if (user.isVerified) {
-      return res
-        .status(400)
-        .json({ message: "Account already verified. You can login." });
+      if (user.role === 'mentor' && user.status === 'pending') {
+        return res.status(400).json({ 
+          message: "Account already verified. Submit application for admin review." 
+        });
+      }
+      return res.status(400).json({ message: "Account already verified. You can login." });
     }
 
     const otp = crypto.randomInt(100000, 999999).toString();
@@ -528,6 +531,35 @@ exports.forgotPassword = async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
+exports.resendResetOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = await bcrypt.hash(otp, 10);
+    const otpExpires = Date.now() + 10 * 60 * 1000;
+
+    user.otp = otpHash;
+    user.otpExpires = otpExpires;
+    await user.save();
+
+    await sendEmail({
+      email: user.email,
+      subject: "MindComfort Password Reset Code (Resent)",
+      message: `Your new verification code is: ${otp}. It expires in 10 minutes.`,
+    });
+
+    res.status(200).json({ message: "New OTP has been sent to your email." });
+  } catch (error) {
+    res.status(500).json({ message: "Error resending OTP", error: error.message });
   }
 };
 

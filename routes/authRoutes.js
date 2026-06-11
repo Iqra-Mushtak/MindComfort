@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { createAdmin, createModerator, register, verifyRegisterOTP, submitMentorApplication, adminReviewMentor, resendOTP, login, getAllApplications, getApplicationById, forgotPassword, verifyResetOTP, resetPassword, logout } = require('../controllers/authController');
+const { createAdmin, createModerator, register, verifyRegisterOTP, submitMentorApplication, adminReviewMentor, resendOTP, login, getAllApplications, getApplicationById, forgotPassword, resendResetOTP, verifyResetOTP, resetPassword, logout } = require('../controllers/authController');
 const { protect, adminOnly, mentorOnly } = require('../middleware/authmiddleware');
 const { loginLimiter, otpLimiter, registerLimiter } = require('../middleware/rateLimiter');
 
@@ -16,6 +16,7 @@ router.post('/login', loginLimiter, login);
 router.get('/get-applications', protect, adminOnly, getAllApplications);
 router.get('/get-applicationById/:id', protect, adminOnly, getApplicationById);
 router.post('/forgot-password', otpLimiter, forgotPassword);
+router.post('/resend-reset-otp', otpLimiter, resendResetOTP);
 router.post('/verify-reset-otp', otpLimiter, verifyResetOTP);
 router.post('/reset-password', otpLimiter, resetPassword);
 router.post('/logout', protect, logout);

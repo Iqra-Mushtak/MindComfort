@@ -96,6 +96,55 @@ exports.initiateEmailChange = async (req, res) => {
     }
 };
 
+exports.initiateEmailChangeResendOTP = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { currentEmail } = req.body;
+
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only change your own email." });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        console.log("DB Email:", `"${user.email}"`);
+        console.log("Input Email:", `"${currentEmail}"`);
+        if (user.email !== currentEmail) {
+            return res.status(400).json({ message: 'Current email does not match.' });
+        }
+
+        const otp = crypto.randomInt(100000, 999999).toString();
+        const otpHash = await bcrypt.hash(otp, 10);
+        const otpExpires = Date.now() + 10 * 60 * 1000;
+
+        user.otp = otpHash;
+        user.otpExpires = otpExpires;
+        await user.save();
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: "MindComfort Email Change Verification",
+                message: `You requested to change your email. Your new verification code is: ${otp}. It expires in 10 minutes.`,
+            });
+
+            res.status(200).json({
+                message: "New OTP sent to your current email. Please verify to proceed.",
+                step: "verify-current"
+            });
+        } catch (emailError) {
+            return res.status(500).json({
+                message: "Failed to send new verification email.",
+                error: emailError.message,
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Error initiating email change', error: error.message });
+    }
+};
+
 exports.verifyCurrentEmailOTP = async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -167,6 +216,56 @@ exports.setNewEmail = async (req, res) => {
 
             res.status(200).json({
                 message: "OTP sent to your new email. Please verify to complete the change.",
+                step: "verify-new"
+            });
+        } catch (emailError) {
+            return res.status(500).json({
+                message: "Failed to send verification email to new address.",
+                error: emailError.message,
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Error setting new email', error: error.message });
+    }
+};
+
+exports.setNewEmailResendOTP = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const { newEmail } = req.body;
+
+        if(enforceOwnership(req, userId)) {
+            return res.status(403).json({ message: "Access denied. You can only set a new email for your own profile." });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        const emailExists = await User.findOne({ email: newEmail });
+        if (emailExists) {
+            return res.status(400).json({ message: 'Email already in use.' });
+        }
+
+        const otp = crypto.randomInt(100000, 999999).toString();
+        const otpHash = await bcrypt.hash(otp, 10);
+        const otpExpires = Date.now() + 10 * 60 * 1000;
+
+        user.pendingEmail = newEmail;
+        user.otp = otpHash;
+        user.otpExpires = otpExpires;
+        await user.save();
+
+        try {
+            await sendEmail({
+                email: newEmail,
+                subject: "MindComfort New Email Verification",
+                message: `Please verify your new email address. Your new verification code is: ${otp}. It expires in 10 minutes.`,
+            });
+
+            res.status(200).json({
+                message: "New OTP sent to your new email. Please verify to complete the change.",
                 step: "verify-new"
             });
         } catch (emailError) {
