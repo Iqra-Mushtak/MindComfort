@@ -79,6 +79,12 @@ exports.deleteChatroom = async (req, res) => {
 
 exports.getChatMessages = async (req, res) => {
     try {
+        const isMentor = req.user.role === 'mentor';
+        if (!isMentor && !req.user.isSubscribed) {
+            return res.status(403).json({ 
+                message: 'Premium subscription required to view chat messages' 
+            });
+        }
         const messages = await ChatMessage.find({
             chatroomId: req.params.id,
             isDeleted: false

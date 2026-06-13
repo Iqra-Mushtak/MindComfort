@@ -5,6 +5,7 @@ const cron = require('node-cron');
 const http = require('http');
 const {v4: uuidv4 } = require('uuid');
 require('dotenv').config();
+const redisClient = require('./config/redis');
 const validateEnv = require('./utils/validateEnv');
 validateEnv();
 
