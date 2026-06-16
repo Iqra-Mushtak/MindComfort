@@ -25,7 +25,8 @@ const server = http.createServer(app);
 const initSocket = require('./utils/socketHandler');
 const io = initSocket(server);
 
-app.set('io', io)
+app.set('io', io);
+global.io = io;
 
 app.use(cors({
     origin: process.env.CLIENT_URL || 'http://localhost:3000',
@@ -38,11 +39,15 @@ const authRoutes = require('./routes/authRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const podcastRoutes = require('./routes/podcastRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/podcasts', podcastRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {
     res.send("The MindComfort Backend is officially running!");

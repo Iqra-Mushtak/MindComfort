@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const passwordSchema = require('../utils/passwordValidator');
 const sendEmail = require('../utils/sendEmail');
 const crypto = require('crypto');
+const NotificationService = require('../services/notificationService');
 
 const enforceOwnership = (req, targetId) => {
     if (!req.user || !req.user._id || !targetId) return true;
@@ -307,6 +308,14 @@ exports.verifyNewEmailOTP = async (req, res) => {
 
         user.email = user.pendingEmail;
         user.pendingEmail = undefined;
+
+                await NotificationService.sendNotification({
+                    recipientId: user._id,
+                    type: 'email_changed',
+                    message: `Your email has been successfully changed to ${user.email}`,
+                    link: '/profile',
+                    channels: ['in-app']
+                });
         user.otp = undefined;
         user.otpExpires = undefined;
         await user.save();
@@ -356,6 +365,15 @@ exports.changePassword = async (req, res) => {
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         user.password = hashedPassword;
         user.tokenVersion = (user.tokenVersion || 0) + 1;
+
+        // Notify user of password change
+        await NotificationService.sendNotification({
+            recipientId: user._id,
+            type: 'password_changed',
+            message: 'Your password has been changed successfully. If you did not make this change, please contact support immediately.',
+            link: '/profile/security',
+            channels: ['in-app']
+        });
 
         await user.save();
 

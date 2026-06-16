@@ -1,5 +1,7 @@
 const Podcast = require('../models/Podcast');
 const PodcastComment = require('../models/PodcastComment');
+const NotificationService = require('../services/notificationService');
+const User = require('../models/User');
 const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const { v4: uuidv4 } = require('uuid');
 const ClientAnonymousSession = require('../models/ClientAnonymousSession');
@@ -61,6 +63,19 @@ const createPodcast = async (req, res) => {
             approvalStatus: 'pending',
             streamStatus: 'scheduled',
         });
+
+        const admins = await User.find({ role: 'admin' }).select('_id');
+        if (admins.length > 0) {
+            const adminIds = admins.map(admin => admin._id);
+            await NotificationService.sendBulkNotifications({
+                recipientIds: adminIds,
+                type: 'podcast_submitted',
+                message: `New podcast session submitted: "${title}" by ${req.user.username || 'a mentor'}`,
+                link: `/admin/podcasts/${podcast._id}`,
+                channels: ['in-app']
+            });
+        }
+
         res.status(201).json({
             success: true,
             message: 'Podcast session created successfully and is pending approval.',
@@ -112,6 +127,21 @@ const updatePodcastApproval = async (req, res) => {
         }
         podcast.approvalStatus = approvalStatus;
         await podcast.save();
+
+        const isApproved = approvalStatus === 'approved';
+        
+        await NotificationService.sendNotification({
+            recipientId: podcast.speaker,
+            type: isApproved ? 'podcast_approved' : 'podcast_rejected',
+            message: isApproved 
+                ? `Great news! Your podcast "${podcast.title}" has been approved.` 
+                : `We're sorry, but your podcast "${podcast.title}" was rejected.`,
+            link: `/podcasts/${podcast._id}`,
+            html: isApproved 
+                ? `<h1>Podcast Approved</h1><p>Your podcast <strong>${podcast.title}</strong> is ready to go live.</p>`
+                : `<h1>Podcast Update</h1><p>Your podcast <strong>${podcast.title}</strong> could not be approved at this time. You can try again.</p>`,
+            channels: ['in-app', 'email']
+        });
 
         res.status(200).json({
             success: true,
@@ -249,6 +279,18 @@ const startPodcastStream = async (req, res) => {
         podcast.agoraResourceId = resourceId;
         podcast.agoraSid = recordingSid;
         await podcast.save();
+
+        const subscribedUsers = await User.find({ isSubscribed: true }).select('_id');
+        const subscriberIds = subscribedUsers.map(user => user._id);
+        if (subscriberIds.length > 0) {
+            await NotificationService.sendBulkNotifications({
+                recipientIds: subscriberIds,
+                type: 'podcast_live',
+                message: `Live now: "${podcast.title}" has started streaming. Join now!`,
+                link: `/podcasts/${podcast._id}`,
+                channels: ['in-app']
+            });
+        }
 
         res.status(200).json({
             success: true,
@@ -400,6 +442,13 @@ const addPodcastComment = async (req, res) => {
             anonymousId: comment.anonymousId,
             content: comment.content,
             createdAt: comment.createdAt,
+        });
+        await NotificationService.sendNotification({
+            recipientId: podcast.speaker,
+            type: 'podcast_comment_received',
+            message: `New comment on your podcast "${podcast.title}": "${content.trim().substring(0, 50)}${content.trim().length > 50 ? '...' : ''}"`,
+            link: `/podcasts/${req.params.id}`,
+            channels: ['in-app']
         });
 
         res.status(201).json({

@@ -3,6 +3,7 @@ const passwordSchema = require('../utils/passwordValidator');
 const bcrypt = require("bcryptjs");
 const sendEmail = require("../utils/sendEmail");
 const MentorApplication = require("../models/MentorApplication");
+const NotificationService = require('../services/notificationService');
 const MentorProfile = require("../models/MentorProfile");
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
@@ -321,6 +322,18 @@ exports.submitMentorApplication = async (req, res) => {
 
     await application.save();
 
+  const admins = await User.find({ role: 'admin' }).select('_id');
+  if (admins.length > 0) {
+    const adminIds = admins.map(admin => admin._id);
+    await NotificationService.sendBulkNotifications({
+      recipientIds: adminIds,
+      type: 'mentor_application_submitted',
+      message: `New mentor application from ${fullName}. Expertise: ${expertise.join(', ')}`,
+      link: `/admin/mentor-applications/${application._id}`,
+      channels: ['in-app']
+    });
+  }
+
     res.status(201).json({
       message:
         "Application submitted successfully! Your account status is now 'Pending' for Admin review.",
@@ -405,6 +418,16 @@ exports.adminReviewMentor = async (req, res) => {
       subject: subject,
       message: `Your application has been ${decision}.`,
       html: htmlContent,
+    });
+
+    await NotificationService.sendNotification({
+      recipientId: mentor._id,
+      type: decision === 'approved' ? 'mentor_approved' : 'mentor_rejected',
+      message: decision === 'approved'
+        ? 'Congratulations! Your mentor application has been approved.'
+        : 'Your mentor application has been reviewed and rejected.',
+      link: '/mentor/dashboard',
+      channels: ['in-app']
     });
 
     res.status(200).json({

@@ -33,6 +33,7 @@ io.use(async (socket, next) => {
             return next(new Error('User is suspended or rejected'));
         }
         socket.user = user;
+        socket.join(`user_${user._id}`);
         next();
     } catch (error) {
         return next(new Error('Invalid authentication token'));
