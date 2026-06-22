@@ -1,4 +1,3 @@
-// middleware/sanitize.js
 const createDOMPurify = require('dompurify');
 const { JSDOM } = require('jsdom');
 const { encode } = require('html-entities');

@@ -19,6 +19,7 @@ const ClientAnonymousSession = require('./models/ClientAnonymousSession');
 const Podcast = require('./models/Podcast');
 const PodcastComment = require('./models/PodcastComment');
 const sanitize = require('./middleware/sanitize');
+const Subscription = require('./models/Subscription');
 
 const app = express();
 const server = http.createServer(app);
@@ -41,12 +42,18 @@ const chatRoutes = require('./routes/chatRoutes');
 const podcastRoutes = require('./routes/podcastRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const adminSubscriptionRoutes = require('./routes/adminSubscriptionRoutes');
+const planRoutes = require('./routes/planRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/podcasts', podcastRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
+app.use('/api/plans', planRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {
@@ -75,6 +82,13 @@ cron.schedule('0 * * * *', async () => {
     } catch (err) {
         console.error('Error during stale podcast cleanup:', err.message);
     }
+});
+
+cron.schedule('0 0 * * *', async () => {
+    await Subscription.updateMany(
+        { endDate: { $lt: new Date() }, status: 'active' },
+        { status: 'expired' }
+    );
 });
 
 cron.schedule('0 0 * * *', async () => {

@@ -4,17 +4,29 @@ const Chatroom = require('../models/Chatroom');
 const ChatReports = require('../models/ChatReports');
 const MentorApplication = require('../models/MentorApplication');
 const Podcast = require('../models/Podcast');
+const Subscription = require('../models/Subscription');
+const Payment = require('../models/Payment');
+const Plan = require('../models/Plan');
 const redisClient = require('../config/redis');
 
 exports.getAdminDashboardInsights = async (req, res) => {
     try {
         const date = new Date().toISOString().split('T')[0];
+        const now = new Date();
+
         const [
             users,
             chatrooms,
             pendingReports,
             pendingPodcasts,
-            mentorProfiles
+            mentorProfiles,
+            activeSubscriptions,
+            expiredSubscriptions,
+            suspendedSubscriptions,
+            activeChatSubs,
+            activePodcastSubs,
+            completedPayments,
+            totalRevenueAgg
         ] = await Promise.all([
             User.find({}),
             Chatroom.find({}),
@@ -22,6 +34,16 @@ exports.getAdminDashboardInsights = async (req, res) => {
             Podcast.countDocuments({ status: 'pending' }),
             MentorApplication.countDocuments({status: 'pending'}),
             MentorProfile.find({}),
+            Subscription.countDocuments({ status: 'active', endDate: { $gt: now } }),
+            Subscription.countDocuments({ status: 'expired' }),
+            Subscription.countDocuments({ status: 'suspended' }),
+            Subscription.countDocuments({ type: 'chat', status: 'active', endDate: { $gt: now } }),
+            Subscription.countDocuments({ type: 'podcast', status: 'active', endDate: { $gt: now } }),
+            Payment.countDocuments({ status: 'completed' }),
+            Payment.aggregate([
+                { $match: { status: 'completed' } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ])
         ]);
 
         const activityKeys = await redisClient.keys(`activity:chatroom:*:total:${date}`);
@@ -32,6 +54,36 @@ exports.getAdminDashboardInsights = async (req, res) => {
 
         const clients = users.filter(u => u.role === 'client');
         const mentors = users.filter(u => u.role === 'mentor');
+
+        const planStats = await Plan.aggregate([
+            {
+                $lookup: {
+                    from: 'subscriptions',
+                    localField: '_id',
+                    foreignField: 'planId',
+                    as: 'subscriptions'
+                }
+            },
+            {
+                $project: {
+                    name: 1,
+                    type: 1,
+                    price: 1,
+                    isActive: 1,
+                    totalSubscriptions: { $size: '$subscriptions' },
+                    activeSubscriptions: {
+                        $size: {
+                            $filter: {
+                                input: '$subscriptions',
+                                as: 'sub',
+                                cond: { $eq: ['$$sub.status', 'active'] }
+                            }
+                        }
+                    }
+                }
+            },
+            { $sort: { totalSubscriptions: -1 } }
+        ]);
 
         const insights = {
             users: {
@@ -48,6 +100,20 @@ exports.getAdminDashboardInsights = async (req, res) => {
                 activeChatrooms: chatrooms.filter(c => c.isActive).length,
                 subscribedClients: clients.filter(c => c.isSubscribed).length,
                 messagesToday: messagesToday,
+            },
+            subscriptions: {
+                activeSubscriptions: activeSubscriptions,
+                expiredSubscriptions: expiredSubscriptions,
+                suspendedSubscriptions: suspendedSubscriptions,
+                activeChatSubscriptions: activeChatSubs,
+                activePodcastSubscriptions: activePodcastSubs,
+                totalRevenue: totalRevenueAgg[0]?.total || 0,
+                completedPayments: completedPayments
+            },
+            plans: {
+                totalPlans: planStats.length,
+                activePlans: planStats.filter(p => p.isActive).length,
+                plans: planStats
             },
             moderation: {
                 pendingReports,
