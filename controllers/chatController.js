@@ -122,8 +122,8 @@ exports.deleteChatroom = async (req, res) => {
 
 exports.getChatMessages = async (req, res) => {
     try {
-        const isMentor = req.user.role === 'mentor';
-        if (!isMentor && !req.user.isSubscribed) {
+        const canViewMessages = ['admin', 'moderator'].includes(req.user.role) || req.user.role === 'mentor' || !!req.subscription || !!req.user.isSubscribed;
+        if (!canViewMessages) {
             return res.status(403).json({ 
                 message: 'Premium subscription required to view chat messages' 
             });

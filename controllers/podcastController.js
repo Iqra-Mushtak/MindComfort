@@ -413,6 +413,68 @@ const joinPodcastStream = async (req, res) => {
     }
 };
 
+const moderatePodcastComment = async (req, res) => {
+    try {
+        const { action, reason } = req.body;
+        if (!['warn', 'suspend'].includes(action)) {
+            return res.status(400).json({ message: 'Action must be either warn or suspend.' });
+        }
+
+        const comment = await PodcastComment.findById(req.params.commentId).populate('user');
+        if (!comment || comment.podcastId.toString() !== req.params.id) {
+            return res.status(404).json({ message: 'Podcast comment not found.' });
+        }
+
+        const targetUser = comment.user;
+        if (!targetUser || targetUser.role !== 'client') {
+            return res.status(400).json({ message: 'Only client accounts can be warned or suspended from podcast comments.' });
+        }
+
+        const moderationReason = reason?.trim() || 'No reason provided.';
+
+        if (action === 'warn') {
+            targetUser.warningCount = (targetUser.warningCount || 0) + 1;
+            await targetUser.save();
+            await NotificationService.sendNotification({
+                recipientId: targetUser._id,
+                type: 'user_warned',
+                message: `A podcast comment you posted was reviewed and a warning was issued. Reason: ${moderationReason}`,
+                link: `/podcasts/${req.params.id}`,
+                channels: ['in-app']
+            });
+        } else {
+            if (targetUser.isSuspended) {
+                return res.status(400).json({ message: 'This user is already suspended.' });
+            }
+            targetUser.isSuspended = true;
+            await targetUser.save();
+            await NotificationService.sendNotification({
+                recipientId: targetUser._id,
+                type: 'user_suspended',
+                message: `Your account has been suspended after a podcast comment violation. Reason: ${moderationReason}`,
+                link: `/podcasts/${req.params.id}`,
+                channels: ['in-app']
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Client ${action === 'warn' ? 'warned' : 'suspended'} successfully.`,
+            data: {
+                action,
+                reason: moderationReason,
+                userId: targetUser._id,
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to moderate podcast comment',
+        });
+    }
+};
+
 const addPodcastComment = async (req, res) => {
     try{
         const { content, anonymousId } = req.body;
@@ -421,6 +483,12 @@ const addPodcastComment = async (req, res) => {
         }
         if(!anonymousId){
             return res.status(400).json({message: 'Anonymous session ID is required to submit a comment.'});
+        }
+        if (['admin', 'moderator'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Admins and moderators cannot post podcast comments.' });
+        }
+        if (req.user.role !== 'client') {
+            return res.status(403).json({ message: 'Only clients can post podcast comments.' });
         }
 
         const podcast = await Podcast.findById(req.params.id);
@@ -477,8 +545,9 @@ const getPodcastComments = async (req, res) => {
         if (!podcast) {
             return res.status(404).json({ message: 'Podcast session not found.' });
         }
-        if (podcast.speaker.toString() !== req.user._id.toString()) {
-            return res.status(403).json({ message: 'Access denied. Only the host mentor can view comments.' });
+        const canViewComments = ['admin', 'moderator'].includes(req.user.role) || podcast.speaker.toString() === req.user._id.toString();
+        if (!canViewComments) {
+            return res.status(403).json({ message: 'Access denied. Only the host mentor or staff can view comments.' });
         }
 
         const comments = await PodcastComment
@@ -500,4 +569,4 @@ const getPodcastComments = async (req, res) => {
     }
 };
 
-module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream, joinPodcastStream, addPodcastComment, getPodcastComments };
+module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream, joinPodcastStream, moderatePodcastComment, addPodcastComment, getPodcastComments };

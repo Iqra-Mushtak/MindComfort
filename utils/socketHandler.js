@@ -18,6 +18,17 @@ const io = new Server(server, {
     }
 });
 
+const isStaffRole = (role) => ['admin', 'moderator'].includes(role);
+
+const checkChatRateLimit = async (chatroomId, userId) => {
+    const rateKey = `ratelimit:chat:${chatroomId}:${userId}`;
+    const currentCount = await redisClient.incr(rateKey);
+    if (currentCount === 1) {
+        await redisClient.expire(rateKey, 60);
+    }
+    return currentCount <= 5;
+};
+
 io.use(async (socket, next) => {
     try{
         const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(' ')[1];
@@ -110,7 +121,7 @@ io.on('connection', (socket) => {
                 }
                 return socket.emit('joinError', 'Your account is currently inactive or suspended. Please contact support for assistance.');
             }
-            if (!chatroom.allowedRoles.includes(socket.user.role)) {
+            if (!isStaffRole(socket.user.role) && !chatroom.allowedRoles.includes(socket.user.role)) {
                 if (typeof callback === 'function') {
                     return callback({ status: 'error', message: 'You do not have permission to join this chatroom' });
                 }
@@ -132,7 +143,8 @@ io.on('connection', (socket) => {
                 dbSessionId = anonymousSession._id;
                 displayIdentity = secureUuid;
             } else {
-                displayIdentity = `${socket.user.fullName || socket.user.username} (Mentor)`;
+                const roleLabel = socket.user.role === 'admin' ? 'Admin' : socket.user.role === 'moderator' ? 'Moderator' : 'Mentor';
+                displayIdentity = `${socket.user.fullName || socket.user.username} (${roleLabel})`;
                 dbSessionId = `staff-${socket.user._id}`;
             }
 
@@ -210,6 +222,15 @@ io.on('connection', (socket) => {
         if (!content || !content.toString().trim()) {
             console.log(`DEBUG: Missing message content for socket ${socket.id}`, JSON.stringify(rawPayload));
             return socket.emit('messageError', 'Message content is required.');
+        }
+
+        if (isStaffRole(socket.user.role)) {
+            return socket.emit('messageError', 'Admins and moderators cannot send messages in chatrooms.');
+        }
+
+        const isRateLimited = !(await checkChatRateLimit(chatroomId, session.userId));
+        if (!isRateLimited) {
+            return socket.emit('messageError', 'You can send only 5 messages per minute in this chatroom.');
         }
 
         try {

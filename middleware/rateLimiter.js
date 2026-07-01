@@ -1,5 +1,17 @@
 const rateLimit = require('express-rate-limit');
 
+const createUserRateLimiter = ({ windowMs, max, message, skip }) => rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.user?._id?.toString() || req.ip,
+    skip,
+    handler: (req, res) => {
+        res.status(429).json({ message: message || 'Too many requests. Please try again later.' });
+    },
+});
+
 const generalRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5, 
@@ -32,4 +44,11 @@ const registerLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-module.exports = { generalRateLimiter, loginLimiter, otpLimiter, registerLimiter };
+const podcastCommentLimiter = createUserRateLimiter({
+    windowMs: 60 * 1000,
+    max: 2,
+    message: 'You can only post 2 comments per minute on a podcast.',
+    skip: (req) => !req.user || !['client'].includes(req.user.role),
+});
+
+module.exports = { generalRateLimiter, loginLimiter, otpLimiter, registerLimiter, podcastCommentLimiter, createUserRateLimiter };
