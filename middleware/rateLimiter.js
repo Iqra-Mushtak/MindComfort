@@ -1,11 +1,11 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 const createUserRateLimiter = ({ windowMs, max, message, skip }) => rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.user?._id?.toString() || req.ip,
+    keyGenerator: (req) => req.user?._id?.toString() || ipKeyGenerator(req),
     skip,
     handler: (req, res) => {
         res.status(429).json({ message: message || 'Too many requests. Please try again later.' });
