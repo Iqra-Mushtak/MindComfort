@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const cron = require('node-cron');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const {v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 const redisClient = require('./config/redis');
@@ -47,8 +49,14 @@ app.use(cors({
     },
     credentials: true
 }));
-app.use(express.json()); 
-app.use(sanitize); 
+app.use(express.json());
+app.use(sanitize);
+
+const uploadsPath = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsPath)) {
+  fs.mkdirSync(uploadsPath, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsPath));
 
 const authRoutes = require('./routes/authRoutes');
 const profileRoutes = require('./routes/profileRoutes');

@@ -109,6 +109,10 @@ exports.register = async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: "User already exists." });
     }
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(400).json({ message: "Username is already taken." });
+    }
 
     let assignedRole = 'client';
     if (role === 'mentor') {
@@ -163,8 +167,9 @@ exports.register = async (req, res) => {
 exports.verifyRegisterOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
+    const normalizedEmail = email?.toLowerCase();
 
-    const user = await User.findOne({ email }).select('+otp');
+    const user = await User.findOne({ email: normalizedEmail }).select('+otp');
 
     if (!user) {
       return res.status(404).json({ message: "User not found." });
@@ -209,8 +214,9 @@ exports.verifyRegisterOTP = async (req, res) => {
 exports.resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
+    const normalizedEmail = email?.toLowerCase();
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       return res.status(404).json({ message: "User not found." });
@@ -261,11 +267,16 @@ exports.submitMentorApplication = async (req, res) => {
       mentorId,
       fullName,
       qualification,
+      qualificationOther,
       experience,
       expertise,
-      documents,
       declaration,
     } = req.body;
+
+    const files = req.files || {};
+    const cnicFile = files.cnicDocument?.[0];
+    const educationFile = files.educationDocument?.[0];
+    const coverLetterText = typeof req.body.coverLetterText === 'string' ? req.body.coverLetterText : '';
 
     const user = req.user;
 
@@ -290,32 +301,49 @@ exports.submitMentorApplication = async (req, res) => {
       return res.status(400).json({ message: "You already have a pending application. Please wait for admin review." });
     }
 
-    const Qualification = qualification?.toLowerCase().trim();
+    let qualifications = [];
+    if (Array.isArray(qualification)) {
+      qualifications = qualification;
+    } else if (typeof qualification === 'string' && qualification.length) {
+    
+      try {
+        const parsed = JSON.parse(qualification);
+        if (Array.isArray(parsed)) qualifications = parsed;
+        else qualifications = [qualification];
+      } catch (e) {
+        qualifications = [qualification];
+      }
+    }
 
-    const QualificationMasters = Qualification.includes(
-      "masters in psychology",
-    );
-    const QualificationADCP = Qualification.includes("adcp");
-
-    if (!QualificationMasters && !QualificationADCP) {
-      return res.status(400).json({
-        message:
-          "Eligibility Error: You must have a 'Masters in Psychology' or 'ADCP'.",
-      });
+    if (qualifications.length === 0 && !qualificationOther) {
+      return res.status(400).json({ message: 'You must provide at least one qualification.' });
     }
 
     if (!declaration) {
-      return res
-        .status(400)
-        .json({ message: "You must agree to the declaration." });
+      return res.status(400).json({ message: "You must agree to the declaration." });
+    }
+
+    const coverLetterWordCount = coverLetterText.trim().split(/\s+/).filter(Boolean).length;
+    if (coverLetterWordCount > 4000) {
+      return res.status(400).json({ message: 'Cover letter should not exceed 4000 words.' });
+    }
+
+    // Documents are required
+    if (!cnicFile || !educationFile) {
+      return res.status(400).json({ message: 'CNIC and educational documents are required.' });
     }
     const application = new MentorApplication({
       mentorId: user._id,
       fullName,
-      qualification,
+      qualification: qualifications,
+      qualificationOther: qualificationOther || '',
       experience,
-      expertise,
-      documents,
+      expertise: Array.isArray(expertise) ? expertise : (typeof expertise === 'string' ? expertise.split(',').map(e=>e.trim()) : []),
+      documents: {
+        cnicDocument: `/uploads/mentor-documents/${cnicFile.filename}`,
+        educationDocument: `/uploads/mentor-documents/${educationFile.filename}`,
+        coverLetter: coverLetterText.trim() ? coverLetterText.trim() : undefined,
+      },
       declaration,
       status: "pending",
     });
@@ -328,7 +356,7 @@ exports.submitMentorApplication = async (req, res) => {
     await NotificationService.sendBulkNotifications({
       recipientIds: adminIds,
       type: 'mentor_application_submitted',
-      message: `New mentor application from ${fullName}. Expertise: ${expertise.join(', ')}`,
+      message: `New mentor application from ${fullName}. Expertise: ${Array.isArray(expertise) ? expertise.join(', ') : expertise}`,
       link: `/admin/mentor-applications/${application._id}`,
       channels: ['in-app']
     });
@@ -492,7 +520,7 @@ exports.login = async (req, res) => {
 
         if (user.role === 'mentor' && user.status !== 'approved') {
             const statusMsgs = {
-                pending: "Your application is still under review by the admin.",
+                pending: "Your application is under review by the admin.",
                 rejected: "Your application was not approved."
             };
             return res.status(403).json({ message: statusMsgs[user.status] || "Access Denied" });

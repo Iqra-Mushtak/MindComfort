@@ -12,19 +12,33 @@ const mentorApplicationSchema = new mongoose.Schema(
       required: true,
     },
     qualification: {
-      type: String,
+      type: [String],
       required: true,
+    },
+    qualificationOther: {
+      type: String,
+      trim: true,
     },
     experience: {
       type: String,
       required: true,
     },
     expertise: {
-      type: String,
+      type: [String],
       required: true,
     },
     documents: {
-      type: String,
+      cnicDocument: {
+        type: String,
+        required: true,
+      },
+      educationDocument: {
+        type: String,
+        required: true,
+      },
+      coverLetter: {
+        type: String,
+      },
     },
     declaration: {
       type: Boolean,
@@ -34,9 +48,9 @@ const mentorApplicationSchema = new mongoose.Schema(
       type: String,
       enum: ["pending", "approved", "rejected"],
       default: 'pending'
-      },
     },
+  },
+  { timestamps: true }
+);
 
-  { timestamps: true });
-  
 module.exports = mongoose.model("MentorApplication", mentorApplicationSchema);
