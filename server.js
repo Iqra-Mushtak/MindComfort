@@ -1,3 +1,4 @@
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -36,12 +37,28 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'http://localhost:5173',
-    'http://127.0.0.1:5173'
+    'http://127.0.0.1:5173',
+    'http://0.0.0.0:5173'
 ].filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+    if (!origin) return true;
+    if (allowedOrigins.includes(origin)) return true;
+
+    try {
+        const { hostname } = new URL(origin);
+        return ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(hostname)
+            || hostname.startsWith('192.168.')
+            || hostname.startsWith('172.')
+            || hostname.startsWith('10.');
+    } catch (error) {
+        return false;
+    }
+};
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (isAllowedOrigin(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));

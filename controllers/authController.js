@@ -539,7 +539,9 @@ exports.login = async (req, res) => {
                 id: user._id,
                 username: user.username,
                 role: user.role,
-                status: user.status
+                status: user.status,
+                isSubscribed: user.isSubscribed,
+                subscriptionStatus: user.isSubscribed ? 'active' : 'inactive'
             }
         });
 

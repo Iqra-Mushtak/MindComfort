@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 
-const { getProfile, updateMentorProfile, addAvailabilitySlot, updateAvailabilitySlot, deleteAvailabilitySlot, initiateEmailChange, initiateEmailChangeResendOTP, verifyCurrentEmailOTP, setNewEmail, setNewEmailResendOTP, verifyNewEmailOTP, changePassword } = require('../controllers/profileController');
+const { getOwnProfile, getProfile, updateMentorProfile, addAvailabilitySlot, updateAvailabilitySlot, deleteAvailabilitySlot, initiateEmailChange, initiateEmailChangeResendOTP, verifyCurrentEmailOTP, setNewEmail, setNewEmailResendOTP, verifyNewEmailOTP, changePassword } = require('../controllers/profileController');
 const { protect, mentorOnly } = require('../middleware/authmiddleware');
 const { generalRateLimiter, loginLimiter, otpLimiter, registerLimiter } = require('../middleware/rateLimiter');
 
+router.get('/', protect, getOwnProfile);
 router.get('/:userId', protect, getProfile);
 router.post('/:userId/change-email/initiate', protect, otpLimiter, initiateEmailChange);
 router.post('/:userId/change-email/initiate-resend', protect, otpLimiter, initiateEmailChangeResendOTP);

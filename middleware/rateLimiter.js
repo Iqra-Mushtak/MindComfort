@@ -45,9 +45,9 @@ const registerLimiter = rateLimit({
 });
 
 const podcastCommentLimiter = createUserRateLimiter({
-    windowMs: 60 * 1000,
-    max: 2,
-    message: 'You can only post 2 comments per minute on a podcast.',
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    message: 'You can only post 5 comments in the podcast session.',
     skip: (req) => !req.user || !['client'].includes(req.user.role),
 });
 

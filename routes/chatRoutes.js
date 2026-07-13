@@ -6,7 +6,7 @@ const { getChatrooms, getChatroomById, getChatMessages, reportMessage, createCha
 
 router.get('/', protect, getChatrooms);
 
-router.get('/:id', protect, verifySubscription('chat'), getChatroomById);
+router.get('/:id', protect, getChatroomById);
 router.get('/:id/messages', protect, verifySubscription('chat'), getChatMessages);
 
 router.post('/report', protect, verifyChatOperation, reportMessage);

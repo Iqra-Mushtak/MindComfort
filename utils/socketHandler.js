@@ -10,9 +10,41 @@ const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 const User = require('../models/User');
 
 const initSocket = (server) => {
+const allowedOrigins = [
+    process.env.CLIENT_URL,
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://0.0.0.0:5173'
+].filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+    if (!origin) return true;
+    if (allowedOrigins.includes(origin)) return true;
+
+    try {
+        const { hostname } = new URL(origin);
+        return ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(hostname)
+            || hostname.startsWith('192.168.')
+            || hostname.startsWith('172.')
+            || hostname.startsWith('10.');
+    } catch (error) {
+        return false;
+    }
+};
+
+const corsOrigin = (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+        callback(null, true);
+    } else {
+        callback(new Error('Not allowed by CORS'));
+    }
+};
+
 const io = new Server(server, {
     cors: {
-        origin: '*',
+        origin: corsOrigin,
         methods: ['GET', 'POST'],
         credentials: true
     }
@@ -26,7 +58,7 @@ const checkChatRateLimit = async (chatroomId, userId) => {
     if (currentCount === 1) {
         await redisClient.expire(rateKey, 60);
     }
-    return currentCount <= 5;
+    return currentCount <= 15;
 };
 
 io.use(async (socket, next) => {
@@ -131,17 +163,34 @@ io.on('connection', (socket) => {
             let dbSessionId = null;
             let displayIdentity = "";
                 
-            if (socket.user.role === 'client') {
-                const secureUuid = uuidv4();
-                const anonymousSession = new ClientAnonymousSession({
+                        if (socket.user.role === 'client') {
+                // Find ANY existing session for this user in this chatroom (active or inactive)
+                let anonymousSession = await ClientAnonymousSession.findOne({
                     userId: socket.user._id,
                     chatroomId: chatroomId,
-                    onModel: 'Chatroom',
-                    anonymousId: secureUuid,
                 });
-                await anonymousSession.save();
+
+                const secureUuid = uuidv4();
+
+                if (!anonymousSession) {
+                    // If absolutely no record exists, create a new one
+                    anonymousSession = new ClientAnonymousSession({
+                        userId: socket.user._id,
+                        chatroomId: chatroomId,
+                        onModel: 'Chatroom',
+                        anonymousId: secureUuid,
+                        isActive: true,
+                    });
+                    await anonymousSession.save();
+                } else {
+                    // If a record exists (even if it was marked inactive), update it with a NEW ID
+                    anonymousSession.anonymousId = secureUuid;
+                    anonymousSession.isActive = true;
+                    await anonymousSession.save();
+                }
+
                 dbSessionId = anonymousSession._id;
-                displayIdentity = secureUuid;
+                displayIdentity = anonymousSession.anonymousId;
             } else {
                 const roleLabel = socket.user.role === 'admin' ? 'Admin' : socket.user.role === 'moderator' ? 'Moderator' : 'Mentor';
                 displayIdentity = `${socket.user.fullName || socket.user.username} (${roleLabel})`;
@@ -163,14 +212,20 @@ io.on('connection', (socket) => {
             const messages = await ChatMessage.find({ chatroomId , isDeleted: false })
             .sort({ createdAt: 1 })
             .limit(200)
-            .select('-senderId');
+            .populate('replyTo', 'content anonymousId'); 
+            const safeMessages = messages.map(msg => {
+                const msgObj = msg.toObject();
+                const isOwn = msgObj.senderId.toString() === socket.user._id.toString();
+                delete msgObj.senderId; 
+                return { ...msgObj, isOwn };
+            });
 
             const joinedData = {
                 status: 'success',
                 chatroomId,
                 anonymousId: displayIdentity,
                 sessionId: dbSessionId,
-                messages,
+                messages: safeMessages,
             };
 
             socket.emit('joinedRoom', joinedData);
@@ -188,6 +243,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('sendMessage', async (...args) => {
+        console.log('Backend received sendMessage event');
         let rawPayload = args[0];
 
         if (args.length > 1) {
@@ -228,12 +284,15 @@ io.on('connection', (socket) => {
             return socket.emit('messageError', 'Admins and moderators cannot send messages in chatrooms.');
         }
 
-        const isRateLimited = !(await checkChatRateLimit(chatroomId, session.userId));
-        if (!isRateLimited) {
-            return socket.emit('messageError', 'You can send only 5 messages per minute in this chatroom.');
+        const isAllowed = (await checkChatRateLimit(chatroomId, session.userId));
+        console.log('Rate limit check passed:', !isAllowed);
+        if (!isAllowed) {
+            console.log('Rate limit exceeded! Blocking message.');
+            return socket.emit('messageError', 'You can send only 15 messages per minute in this chatroom.');
         }
 
         try {
+            console.log('Saving message to database...');
             const message = new ChatMessage({
                 chatroomId,
                 senderId: session.userId,
@@ -243,6 +302,13 @@ io.on('connection', (socket) => {
                 replyTo
             });
             await message.save();
+            if (replyTo) {
+                await message.populate({
+                    path: 'replyTo',
+                    select: 'content anonymousId'
+                });
+            }
+            console.log('Message saved to MongoDB:', message._id);
 
             const date = new Date().toISOString().split('T')[0];
             const totalKey = `activity:chatroom:${chatroomId}:total:${date}`; 
@@ -275,7 +341,7 @@ io.on('connection', (socket) => {
                 await redisClient.expire(mentorKey, TTL);
             }
 
-            const dynamicPayload = {
+            const basePayload = {
                 _id: message._id,
                 chatroomId: message.chatroomId,
                 sessionId: message.sessionId,
@@ -285,7 +351,8 @@ io.on('connection', (socket) => {
                 createdAt: message.createdAt
             };
 
-            io.to(chatroomId).emit('newMessage', dynamicPayload);
+            socket.emit('newMessage', { ...basePayload, isOwn: true });
+            socket.to(chatroomId).emit('newMessage', { ...basePayload, isOwn: false });
         } catch (error) {
             console.error("Database Save Error:", error);
             socket.emit('messageError', 'An error occurred while sending the message');
@@ -297,6 +364,13 @@ io.on('connection', (socket) => {
         if (sessionRaw) {
             const session = JSON.parse(sessionRaw);
             socket.leave(session.chatroomId);
+            if (session.role === 'client' && session.sessionId) {
+                try {
+                    await ClientAnonymousSession.findByIdAndUpdate(session.sessionId, { isActive: false });
+                } catch (err) {
+                    console.error('Error terminating session in DB:', err);
+                }
+            }
             await redisClient.del(`socket:session:${socket.id}`);
         }
     });
@@ -306,6 +380,17 @@ io.on('connection', (socket) => {
         console.log(`Mentor ${socket.user._id} joined podcast room: podcast_${podcastId}`);
     });
     socket.on('disconnect', async () => {
+        const sessionRaw = await redisClient.get(`socket:session:${socket.id}`);
+        if (sessionRaw) {
+            const session = JSON.parse(sessionRaw);
+            if (session.role === 'client' && session.sessionId) {
+                try {
+                    await ClientAnonymousSession.findByIdAndUpdate(session.sessionId, { isActive: false });
+                } catch (err) {
+                    console.error('Error terminating session in DB on disconnect:', err);
+                }
+            }
+        }
         await redisClient.del(`socket:session:${socket.id}`);
     });
     socket.on('error', async (error) => {
