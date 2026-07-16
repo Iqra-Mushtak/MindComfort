@@ -394,18 +394,18 @@ exports.adminReviewMentor = async (req, res) => {
     const mentorApplication = await MentorApplication.findOne({ mentorId, status: 'pending' });
 
     if (decision === "approved" && mentorApplication) {
-      const existingProfile = await MentorProfile.findOne({ mentorId });
-      if (!existingProfile) {
-        const newMentorProfile = new MentorProfile({
-          mentorId: mentor._id,
-          fullName: mentorApplication.fullName,
-          qualification: mentorApplication.qualification,
-          experience: mentorApplication.experience,
-          expertise: mentorApplication.expertise,
-        });
-        await newMentorProfile.save();
-      } 
-    }
+    const existingProfile = await MentorProfile.findOne({ mentorId });
+    if (!existingProfile) {
+      const newMentorProfile = new MentorProfile({
+        mentorId: mentor._id,
+        fullName: mentorApplication.fullName,
+        qualification: Array.isArray(mentorApplication.qualification) ? mentorApplication.qualification.join(', ') : mentorApplication.qualification,
+        experience: mentorApplication.experience,
+        expertise: Array.isArray(mentorApplication.expertise) ? mentorApplication.expertise.join(', ') : mentorApplication.expertise,
+      });
+      await newMentorProfile.save();
+    } 
+  }
        if (mentorApplication){
         mentorApplication.status = decision;
         await mentorApplication.save();

@@ -38,10 +38,6 @@ exports.getOwnProfile = async (req, res) => {
 exports.getProfile = async (req, res) => {
     try {
         const userId = req.params.userId;
-
-        if(enforceOwnership(req, userId)) {
-            return res.status(403).json({ message: "Access denied. You can only view your own profile." });
-        }
         const user = await User.findById(userId).select('-password -otp -otpExpires -resetPasswordToken -pendingEmail');
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
@@ -54,16 +50,30 @@ exports.getProfile = async (req, res) => {
                 email: user.email,
                 role: user.role,
                 isVerified: user.isVerified,
-                status: user.status,
+                status: user.status, // Account status (pending, approved, rejected)
                 isSubscribed: user.isSubscribed,
                 subscriptionStatus: user.isSubscribed ? 'active' : 'inactive'
             }
         };
 
-        // If mentor, fetch mentor profile
         if (user.role === 'mentor') {
-            const mentorProfile = await MentorProfile.findOne({ mentorId: userId });
-            if (mentorProfile) {
+            const MentorProfile = require('../models/MentorProfile');
+            const MentorApplication = require('../models/MentorApplication');
+
+            let mentorProfile = await MentorProfile.findOne({ mentorId: userId });
+            
+            if (!mentorProfile) {
+                const application = await MentorApplication.findOne({ mentorId: userId, status: 'approved' }).sort({ createdAt: -1 });
+                
+                if (application) {
+                    profile.mentorProfile = {
+                        fullName: application.fullName,
+                        qualification: Array.isArray(application.qualification) ? application.qualification.join(', ') : application.qualification,
+                        experience: application.experience,
+                        expertise: Array.isArray(application.expertise) ? application.expertise.join(', ') : application.expertise
+                    };
+                }
+            } else {
                 profile.mentorProfile = mentorProfile;
             }
         }
@@ -479,7 +489,21 @@ exports.updateMentorProfile = async (req, res) => {
 
         let mentorProfile = await MentorProfile.findOne({ mentorId });
         if (!mentorProfile) {
-            return res.status(404).json({ message: 'Mentor profile not found. Profile is created after admin approval.' });
+            const MentorApplication = require('../models/MentorApplication');
+            const application = await MentorApplication.findOne({ mentorId, status: 'approved' });
+            
+            if (application) {
+                mentorProfile = new MentorProfile({
+                    mentorId,
+                    fullName: application.fullName,
+                    qualification: Array.isArray(application.qualification) ? application.qualification.join(', ') : application.qualification,
+                    experience: application.experience,
+                    expertise: Array.isArray(application.expertise) ? application.expertise.join(', ') : application.expertise,
+                });
+                await mentorProfile.save();
+            } else {
+                return res.status(404).json({ message: 'Mentor profile not found. Profile is created after admin approval.' });
+            }
         }
 
         if (fullName) mentorProfile.fullName = fullName;
@@ -506,23 +530,37 @@ exports.addAvailabilitySlot = async (req, res) => {
         if(enforceOwnership(req, mentorId)) {
             return res.status(403).json({ message: "Access denied. You can only update your own mentor profile." });
         }
+        
         if (!day && !date) {
             return res.status(400).json({ message: 'Either day or date must be provided.' });
         }
-        if (date && isNaN(Date.parse(date))) {
-            return res.status(400).json({ message: 'Invalid date format provided.' });
+        
+        if (date) {
+            const parsedDate = new Date(date);
+            if (isNaN(parsedDate.getTime())) {
+                return res.status(400).json({ message: 'Invalid date format provided.' });
+            }
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (parsedDate < today) {
+                return res.status(400).json({ message: 'Cannot add availability for past dates.' });
+            }
         }
 
         if (!startTime || !endTime) {
             return res.status(400).json({ message: 'Start time and end time are required.' });
         }
-            if(startTime && endTime) {
-                const start = parseInt(startTime.replace(':', ''), 10);
-                const end = parseInt(endTime.replace(':', ''), 10);
-                if (start >= end) {
-                return res.status(400).json({ message: 'Start time must be before end time.' });
-                }
-            }
+        
+        const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+            return res.status(400).json({ message: 'Invalid time format. Use HH:MM (24-hour format).' });
+        }
+
+        const start = parseInt(startTime.replace(':', ''), 10);
+        const end = parseInt(endTime.replace(':', ''), 10);
+        if (start >= end) {
+            return res.status(400).json({ message: 'Start time must be before end time.' });
+        }
         
         const user = await User.findById(mentorId);
         if (!user || user.role !== 'mentor') {
@@ -532,6 +570,23 @@ exports.addAvailabilitySlot = async (req, res) => {
         let mentorProfile = await MentorProfile.findOne({ mentorId });
         if (!mentorProfile) {
             return res.status(404).json({ message: 'Mentor profile not found.' });
+        }
+
+        const hasConflict = mentorProfile.availabilitySchedule.some(slot => {
+            const sameDay = day && slot.day === day;
+            const sameDate = date && slot.date && new Date(slot.date).toDateString() === new Date(date).toDateString();
+            
+            if (sameDay || sameDate) {
+                const slotStart = parseInt(slot.startTime.replace(':', ''), 10);
+                const slotEnd = parseInt(slot.endTime.replace(':', ''), 10);
+                // Check overlap: (start < slotEnd) && (end > slotStart)
+                return start < slotEnd && end > slotStart;
+            }
+            return false;
+        });
+
+        if (hasConflict) {
+            return res.status(400).json({ message: 'Time slot overlaps with existing availability.' });
         }
 
         const newSlot = {
@@ -563,6 +618,36 @@ exports.updateAvailabilitySlot = async (req, res) => {
             return res.status(403).json({ message: "Access denied. You can only update your own availability slots." });
         }
 
+        if (date) {
+            const parsedDate = new Date(date);
+            if (isNaN(parsedDate.getTime())) {
+                return res.status(400).json({ message: 'Invalid date format provided.' });
+            }
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (parsedDate < today) {
+                return res.status(400).json({ message: 'Cannot set availability for past dates.' });
+            }
+        }
+
+        if (startTime || endTime) {
+            const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+            if (startTime && !timeRegex.test(startTime)) {
+                return res.status(400).json({ message: 'Invalid start time format. Use HH:MM.' });
+            }
+            if (endTime && !timeRegex.test(endTime)) {
+                return res.status(400).json({ message: 'Invalid end time format. Use HH:MM.' });
+            }
+
+            if (startTime && endTime) {
+                const start = parseInt(startTime.replace(':', ''), 10);
+                const end = parseInt(endTime.replace(':', ''), 10);
+                if (start >= end) {
+                    return res.status(400).json({ message: 'Start time must be before end time.' });
+                }
+            }
+        }
+
         const user = await User.findById(mentorId);
         if (!user || user.role !== 'mentor') {
             return res.status(404).json({ message: 'Mentor not found.' });
@@ -576,6 +661,33 @@ exports.updateAvailabilitySlot = async (req, res) => {
         const slot = mentorProfile.availabilitySchedule.id(slotId);
         if (!slot) {
             return res.status(404).json({ message: 'Availability slot not found.' });
+        }
+
+        const updatedDay = day !== undefined ? day : slot.day;
+        const updatedDate = date !== undefined ? new Date(date) : slot.date;
+        const updatedStartTime = startTime || slot.startTime;
+        const updatedEndTime = endTime || slot.endTime;
+
+        const hasConflict = mentorProfile.availabilitySchedule.some(existingSlot => {
+            if (existingSlot._id.toString() === slotId) return false; // Skip current slot
+            
+            const sameDay = updatedDay && existingSlot.day === updatedDay;
+            const sameDate = updatedDate && existingSlot.date && 
+                            new Date(existingSlot.date).toDateString() === updatedDate.toDateString();
+            
+            if (sameDay || sameDate) {
+                const existingStart = parseInt(existingSlot.startTime.replace(':', ''), 10);
+                const existingEnd = parseInt(existingSlot.endTime.replace(':', ''), 10);
+                const newStart = parseInt(updatedStartTime.replace(':', ''), 10);
+                const newEnd = parseInt(updatedEndTime.replace(':', ''), 10);
+                
+                return newStart < existingEnd && newEnd > existingStart;
+            }
+            return false;
+        });
+
+        if (hasConflict) {
+            return res.status(400).json({ message: 'Time slot overlaps with existing availability.' });
         }
 
         if (day !== undefined) slot.day = day;
@@ -613,9 +725,10 @@ exports.deleteAvailabilitySlot = async (req, res) => {
         }
 
         const updateResult = await MentorProfile.updateOne(
-            {mentorId, 'availabilitySchedule._id': slotId},
+            { mentorId, 'availabilitySchedule._id': slotId },
             { $pull: { availabilitySchedule: { _id: slotId } } }
-        )
+        );
+        
         if (updateResult.matchedCount === 0) {
             return res.status(404).json({ message: 'Availability slot not found.' });
         }
