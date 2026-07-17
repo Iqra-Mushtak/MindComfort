@@ -525,10 +525,12 @@ exports.updateMentorProfile = async (req, res) => {
 exports.addAvailabilitySlot = async (req, res) => {
     try {
         const mentorId = req.params.mentorId;
-        const { day, date, startTime, endTime } = req.body;
+        const { day, endDay, date, endDate, startTime, endTime } = req.body;
+
+        console.log("Adding slot for mentorId:", mentorId, "Payload:", req.body);
 
         if(enforceOwnership(req, mentorId)) {
-            return res.status(403).json({ message: "Access denied. You can only update your own mentor profile." });
+            return res.status(403).json({ message: "Access denied." });
         }
         
         if (!day && !date) {
@@ -538,12 +540,16 @@ exports.addAvailabilitySlot = async (req, res) => {
         if (date) {
             const parsedDate = new Date(date);
             if (isNaN(parsedDate.getTime())) {
-                return res.status(400).json({ message: 'Invalid date format provided.' });
+                return res.status(400).json({ message: 'Invalid date format.' });
             }
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (parsedDate < today) {
-                return res.status(400).json({ message: 'Cannot add availability for past dates.' });
+            if (endDate) {
+                const parsedEndDate = new Date(endDate);
+                if (isNaN(parsedEndDate.getTime())) {
+                    return res.status(400).json({ message: 'Invalid end date format.' });
+                }
+                if (parsedEndDate < parsedDate) {
+                    return res.status(400).json({ message: 'End date must be after start date.' });
+                }
             }
         }
 
@@ -553,7 +559,7 @@ exports.addAvailabilitySlot = async (req, res) => {
         
         const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
         if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
-            return res.status(400).json({ message: 'Invalid time format. Use HH:MM (24-hour format).' });
+            return res.status(400).json({ message: 'Invalid time format.' });
         }
 
         const start = parseInt(startTime.replace(':', ''), 10);
@@ -572,29 +578,15 @@ exports.addAvailabilitySlot = async (req, res) => {
             return res.status(404).json({ message: 'Mentor profile not found.' });
         }
 
-        const hasConflict = mentorProfile.availabilitySchedule.some(slot => {
-            const sameDay = day && slot.day === day;
-            const sameDate = date && slot.date && new Date(slot.date).toDateString() === new Date(date).toDateString();
-            
-            if (sameDay || sameDate) {
-                const slotStart = parseInt(slot.startTime.replace(':', ''), 10);
-                const slotEnd = parseInt(slot.endTime.replace(':', ''), 10);
-                // Check overlap: (start < slotEnd) && (end > slotStart)
-                return start < slotEnd && end > slotStart;
-            }
-            return false;
-        });
-
-        if (hasConflict) {
-            return res.status(400).json({ message: 'Time slot overlaps with existing availability.' });
-        }
-
         const newSlot = {
-            day: day || undefined,
-            date: date ? new Date(date) : undefined,
             startTime,
             endTime,
         };
+
+        if (day && day.trim() !== '') newSlot.day = day;
+        if (endDay && endDay.trim() !== '') newSlot.endDay = endDay;
+        if (date && date.trim() !== '') newSlot.date = new Date(date);
+        if (endDate && endDate.trim() !== '') newSlot.endDate = new Date(endDate);
 
         mentorProfile.availabilitySchedule.push(newSlot);
         mentorProfile.markModified('availabilitySchedule');
@@ -605,6 +597,7 @@ exports.addAvailabilitySlot = async (req, res) => {
             slot: mentorProfile.availabilitySchedule[mentorProfile.availabilitySchedule.length - 1]
         });
     } catch (error) {
+        console.error("CRASH ERROR in addAvailabilitySlot:", error);
         res.status(500).json({ message: 'Error adding availability slot', error: error.message });
     }
 };

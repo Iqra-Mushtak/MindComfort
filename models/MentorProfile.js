@@ -5,7 +5,14 @@ const availabilitySlotSchema = new mongoose.Schema({
         type: String,
         enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
     },
+    endDay: {
+        type: String,
+        enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+    },
     date: {
+        type: Date,
+    },
+    endDate: {
         type: Date,
     },
     startTime: {
