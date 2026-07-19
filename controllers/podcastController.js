@@ -7,25 +7,13 @@ const { v4: uuidv4 } = require('uuid');
 const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 const axios = require('axios');
 const { getAgoraRestHeaders } = require('../config/agora');
+const Subscription = require('../models/Subscription'); 
 
-const isImageUrl = async(url) => {
-    try {
-        const response = await axios.head(url, { timeout: 5000 });
-        const contentType = response.headers['content-type'];
-        return contentType && contentType.startsWith('image/');
-    } catch (error) {
-        return false;
-    }
-};
 const createPodcast = async (req, res) => {
     try {
-        const { title, description, startTime, endTime, coverImage } = req.body;
-        if (!title || !description || !startTime || !endTime || !coverImage) {
+        const { title, description, startTime, endTime, price } = req.body;
+        if (!title || !description || !startTime || !endTime || !price) {
             return res.status(400).json({ message: 'All fields are required' });
-        }
-
-        if (!await isImageUrl(coverImage)) {
-            return res.status(400).json({ message: 'Cover image must be a valid image URL' });
         }
 
         const start = new Date(startTime);
@@ -58,6 +46,7 @@ const createPodcast = async (req, res) => {
             description,
             startTime: new Date(startTime),
             endTime: new Date(endTime),
+            price: price !== undefined ? Number(price) : 0, 
             coverImage,
             speaker: req.user._id,
             approvalStatus: 'pending',
@@ -569,4 +558,151 @@ const getPodcastComments = async (req, res) => {
     }
 };
 
-module.exports = { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, startPodcastStream, endPodcastStream, joinPodcastStream, moderatePodcastComment, addPodcastComment, getPodcastComments };
+// 1. Get single podcast by ID
+const getPodcastById = async (req, res) => {
+    try {
+        const podcast = await Podcast.findById(req.params.id).populate('speaker', 'username fullName email');
+        if (!podcast) return res.status(404).json({ message: 'Podcast not found' });
+        res.status(200).json({ success: true, data: podcast });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+const getClientUpcomingPodcasts = async (req, res) => {
+    try {
+        const now = new Date();
+        const upcomingPodcasts = await Podcast.find({
+            approvalStatus: 'approved',
+            streamStatus: { $in: ['scheduled', 'live'] },
+            startTime: { $gt: now }
+        }).populate('speaker', 'username fullName').sort({ startTime: 1 });
+
+        const userId = req.user._id;
+        const userSubs = await Subscription.find({
+            userId,
+            type: { $in: ['podcast', 'both'] },
+            status: 'active',
+            $or: [{ endDate: { $gt: now } }, { endDate: null }]
+        }).select('referenceId type');
+
+        const hasPlanAccess = userSubs.some(s => s.type === 'podcast' || s.type === 'both');
+        const purchasedIds = new Set(userSubs.filter(s => s.referenceId).map(s => s.referenceId.toString()));
+
+        const podcasts = upcomingPodcasts.map(p => ({
+            ...p.toObject(),
+            isPurchased: hasPlanAccess || purchasedIds.has(p._id.toString())
+        }));
+
+        res.status(200).json({ success: true, data: podcasts });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+const getClientMyLibrary = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const now = new Date();
+
+        const subscriptions = await Subscription.find({
+            userId,
+            type: { $in: ['podcast', 'both'] },
+            status: 'active',
+            $or: [{ endDate: { $gt: now } }, { endDate: null }]
+        }).select('referenceId type status createdAt');
+
+        const hasPlanAccess = subscriptions.some(s => !s.referenceId);
+        let podcasts = [];
+
+        if (hasPlanAccess) {
+            podcasts = await Podcast.find({ approvalStatus: 'approved' }).populate('speaker', 'username fullName');
+        } else {
+            const podcastIds = subscriptions.filter(s => s.referenceId).map(s => s.referenceId);
+            if (podcastIds.length === 0) return res.status(200).json({ success: true, upcoming: [], past: [] });
+            podcasts = await Podcast.find({ _id: { $in: podcastIds } }).populate('speaker', 'username fullName');
+        }
+
+        const upcoming = [];
+        const past = [];
+
+        podcasts.forEach(podcast => {
+            const podcastData = { ...podcast.toObject(), hasPlanAccess };
+            if (podcast.streamStatus === 'scheduled' || podcast.streamStatus === 'live') {
+                upcoming.push(podcastData);
+            } else if (podcast.streamStatus === 'ended') {
+                past.push({
+                    ...podcastData,
+                    hasRecording: !!podcast.recordingUrl,
+                    recordingUrl: podcast.recordingUrl || null
+                });
+            }
+        });
+
+        upcoming.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+        past.sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
+
+        res.status(200).json({ success: true, upcoming, past });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+const getPodcastRecording = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast) return res.status(404).json({ message: 'Podcast not found' });
+
+        if (!podcast.recordingUrl) {
+            return res.status(404).json({ message: 'No recording available for this podcast' });
+        }
+
+        const isSpeaker = podcast.speaker.toString() === userId.toString();
+        const isStaff = ['admin', 'moderator'].includes(req.user.role);
+
+        if (!isSpeaker && !isStaff) {
+            const subscription = await Subscription.findOne({
+                userId,
+                type: { $in: ['podcast', 'both'] },
+                status: 'active',
+                $and: [
+                    { $or: [{ endDate: { $gt: new Date() } }, { endDate: null }] },
+                    { $or: [{ referenceId: podcast._id }, { referenceId: null }] }
+                ]
+            });
+            if (!subscription) {
+                return res.status(403).json({ message: 'You must purchase this podcast to access the recording' });
+            }
+        }
+
+        podcast.listenCount = (podcast.listenCount || 0) + 1;
+        await podcast.save();
+
+        res.status(200).json({ success: true, recordingUrl: podcast.recordingUrl });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+const deletePodcastRecording = async (req, res) => {
+    try {
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast) return res.status(404).json({ message: 'Podcast not found' });
+        if (!podcast.recordingUrl) return res.status(400).json({ message: 'This podcast has no recording to delete' });
+
+        podcast.recordingUrl = null;
+        await podcast.save();
+
+        res.status(200).json({ success: true, message: 'Recording deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+module.exports = { 
+    createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, 
+    startPodcastStream, endPodcastStream, joinPodcastStream, moderatePodcastComment, 
+    addPodcastComment, getPodcastComments,
+    getPodcastById, getClientUpcomingPodcasts, getClientMyLibrary, getPodcastRecording, deletePodcastRecording 
+};

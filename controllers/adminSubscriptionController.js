@@ -300,7 +300,7 @@ exports.reactivateSubscription = async (req, res) => {
             return res.status(404).json({ message: 'Subscription not found' });
         }
 
-        if (subscription.endDate < new Date()) {
+        if (subscription.endDate && subscription.endDate < new Date()) {
             return res.status(400).json({ message: 'Cannot reactivate expired subscription. User must renew.' });
         }
 

@@ -38,7 +38,7 @@ const subscriptionSchema = new mongoose.Schema({
     },
     endDate: { 
         type: Date, 
-        required: true 
+        required: false
     },
     status: { 
         type: String, 

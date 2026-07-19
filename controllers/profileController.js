@@ -5,10 +5,66 @@ const passwordSchema = require('../utils/passwordValidator');
 const sendEmail = require('../utils/sendEmail');
 const crypto = require('crypto');
 const NotificationService = require('../services/notificationService');
+const Subscription = require('../models/Subscription');
 
 const enforceOwnership = (req, targetId) => {
     if (!req.user || !req.user._id || !targetId) return true;
     return req.user._id.toString() !== targetId.toString();
+};
+
+const buildSubscriptionInfo = async (userId) => {
+    const now = new Date();
+    
+    const subscriptions = await Subscription.find({
+        userId,
+        status: { $in: ['active', 'suspended'] }
+    }).populate('planId', 'name type price durationMonths').populate('referenceId', 'title startTime endTime');
+
+    const chatSub = subscriptions.find(s => 
+        (s.type === 'chat' || s.type === 'both') && 
+        s.planId && 
+        (s.endDate === null || s.endDate > now)
+    );
+
+    const podcastPlanSub = subscriptions.find(s => 
+        (s.type === 'podcast' || s.type === 'both') && 
+        s.planId && 
+        !s.referenceId &&
+        (s.endDate === null || s.endDate > now)
+    );
+
+    const individualPodcasts = subscriptions.filter(s => 
+        s.type === 'podcast' && 
+        s.referenceId && 
+        s.status === 'active'
+    );
+
+    return {
+        chat: chatSub ? {
+            hasAccess: true,
+            planName: chatSub.planId?.name,
+            price: chatSub.planId?.price,
+            status: chatSub.status,
+            endDate: chatSub.endDate
+        } : { hasAccess: false },
+        
+        podcast: {
+            hasPlanAccess: !!podcastPlanSub,
+            planName: podcastPlanSub?.planId?.name || null,
+            planStatus: podcastPlanSub?.status || null,
+            planEndDate: podcastPlanSub?.endDate || null,
+            individualPurchases: individualPodcasts.map(p => ({
+                podcastId: p.referenceId?._id,
+                podcastTitle: p.referenceId?.title,
+                purchasedAt: p.createdAt,
+                price: p.planPrice
+            }))
+        },
+
+        totalActiveSubscriptions: subscriptions.filter(s => 
+            s.status === 'active' && (s.endDate === null || s.endDate > now)
+        ).length
+    };
 };
 
 exports.getOwnProfile = async (req, res) => {
@@ -17,6 +73,8 @@ exports.getOwnProfile = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
+
+        const subscriptionInfo = await buildSubscriptionInfo(user._id);
 
         res.status(200).json({
             user: {
@@ -28,7 +86,8 @@ exports.getOwnProfile = async (req, res) => {
                 status: user.status,
                 isSubscribed: user.isSubscribed,
                 subscriptionStatus: user.isSubscribed ? 'active' : 'inactive'
-            }
+            },
+            subscriptions: subscriptionInfo
         });
     } catch (error) {
         res.status(500).json({ message: 'Error fetching profile', error: error.message });
@@ -43,6 +102,8 @@ exports.getProfile = async (req, res) => {
             return res.status(404).json({ message: 'User not found.' });
         }
 
+                const subscriptionInfo = await buildSubscriptionInfo(user._id);
+
         let profile = {
             user: {
                 id: user._id,
@@ -50,10 +111,11 @@ exports.getProfile = async (req, res) => {
                 email: user.email,
                 role: user.role,
                 isVerified: user.isVerified,
-                status: user.status, // Account status (pending, approved, rejected)
+                status: user.status,
                 isSubscribed: user.isSubscribed,
                 subscriptionStatus: user.isSubscribed ? 'active' : 'inactive'
-            }
+            },
+            subscriptions: subscriptionInfo
         };
 
         if (user.role === 'mentor') {

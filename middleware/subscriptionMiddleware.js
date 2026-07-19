@@ -24,7 +24,10 @@ const verifySubscription = (moduleType) => async (req, res, next) => {
                 userId: req.user._id,
                 type: { $in: [moduleType, 'both'] },
                 status: 'active',
-                endDate: { $gt: new Date() }
+                $or: [
+                    { endDate: { $gt: new Date() } },
+                    { endDate: null }
+                ]
             });
 
             if (!activeSub) {
@@ -64,7 +67,10 @@ const verifyPodcastRecordingAccess = async (req, res, next) => {
                 userId: req.user._id,
                 type: 'podcast',
                 status: 'active',
-                endDate: { $gt: new Date() }
+                $or: [
+                    { endDate: { $gt: new Date() } },
+                    { endDate: null }
+                ]
             });
 
             if (!activeSub) {
@@ -99,7 +105,10 @@ const verifyChatOperation = async (req, res, next) => {
                 userId: req.user._id,
                 type: 'chat',
                 status: 'active',
-                endDate: { $gt: new Date() }
+                $or: [
+                    { endDate: { $gt: new Date() } },
+                    { endDate: null }
+                ]
             });
 
             if (!activeSub) {

@@ -31,14 +31,25 @@ exports.getAdminDashboardInsights = async (req, res) => {
             User.find({}),
             Chatroom.find({}),
             ChatReports.countDocuments({ status: 'pending' }),
-            Podcast.countDocuments({ status: 'pending' }),
+            Podcast.countDocuments({ approvalStatus: 'pending' }),
             MentorApplication.countDocuments({status: 'pending'}),
             MentorProfile.find({}),
-            Subscription.countDocuments({ status: 'active', endDate: { $gt: now } }),
+            Subscription.countDocuments({ 
+                status: 'active', 
+                $or: [{ endDate: { $gt: now } }, { endDate: null }] 
+            }),
             Subscription.countDocuments({ status: 'expired' }),
             Subscription.countDocuments({ status: 'suspended' }),
-            Subscription.countDocuments({ type: 'chat', status: 'active', endDate: { $gt: now } }),
-            Subscription.countDocuments({ type: 'podcast', status: 'active', endDate: { $gt: now } }),
+            Subscription.countDocuments({ 
+                type: 'chat', 
+                status: 'active', 
+                $or: [{ endDate: { $gt: now } }, { endDate: null }] 
+            }),
+            Subscription.countDocuments({ 
+                type: 'podcast', 
+                status: 'active', 
+                $or: [{ endDate: { $gt: now } }, { endDate: null }] 
+            }),
             Payment.countDocuments({ status: 'completed' }),
             Payment.aggregate([
                 { $match: { status: 'completed' } },

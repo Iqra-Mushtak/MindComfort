@@ -89,7 +89,8 @@ exports.getMySubscriptionStatus = async (req, res) => {
         }).populate('paymentId').sort({ createdAt: -1 });
 
         const activeSubscriptions = subscriptions.filter(sub => 
-            sub.status === 'active' && sub.endDate > new Date()
+            sub.status === 'active' && 
+            (sub.endDate === null || sub.endDate > new Date())
         );
 
         res.status(200).json({
@@ -116,7 +117,10 @@ exports.getSubscriptionByType = async (req, res) => {
             userId: req.user._id,
             type,
             status: 'active',
-            endDate: { $gt: new Date() }
+            $or: [
+                { endDate: { $gt: new Date() } },
+                { endDate: null }
+            ]
         }).populate('paymentId');
 
         if (!subscription) {
@@ -220,5 +224,66 @@ exports.cancelSubscription = async (req, res) => {
         res.status(200).json({ message: 'Subscription cancelled successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Error cancelling subscription', error: error.message });
+    }
+};
+
+exports.purchaseIndividualPodcast = async (req, res) => {
+    try {
+        const { podcastId } = req.params;
+        const userId = req.user._id;
+        const now = new Date();
+
+        const Podcast = require('../models/Podcast');
+        const podcast = await Podcast.findById(podcastId);
+        if (!podcast) return res.status(404).json({ message: 'Podcast not found' });
+        if (podcast.approvalStatus !== 'approved') {
+            return res.status(400).json({ message: 'Podcast is not available for purchase' });
+        }
+        if (podcast.streamStatus === 'ended') {
+            return res.status(400).json({ message: 'Cannot purchase a past podcast' });
+        }
+
+        const existing = await Subscription.findOne({
+            userId,
+            type: 'podcast',
+            referenceId: podcastId,
+            status: 'active'
+        });
+        if (existing) {
+            return res.status(400).json({ message: 'You have already purchased this podcast' });
+        }
+
+        const payment = await Payment.create({
+            planId: null,
+            userId,
+            transactionId: `POD_${Date.now()}_${userId}`,
+            amount: podcast.price || 0,
+            currency: 'PKR',
+            paymentMethod: 'payfast',
+            status: 'completed'
+        });
+
+        const subscription = await Subscription.create({
+            userId,
+            planId: null,
+            type: 'podcast',
+            referenceId: podcast._id,
+            planName: podcast.title,
+            planPrice: podcast.price || 0,
+            planDurationMonths: 0,
+            startDate: now,
+            endDate: null, // Permanent access
+            status: 'active',
+            paymentId: payment._id,
+            paymentStatus: 'completed'
+        });
+
+        res.status(201).json({
+            message: 'Podcast purchased successfully',
+            subscription,
+            payment
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Podcast purchase failed', error: error.message });
     }
 };

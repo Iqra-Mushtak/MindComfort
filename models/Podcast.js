@@ -25,9 +25,14 @@ const podcastSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
-    coverImage: {
-        type: String,
-        required: true
+    // coverImage: {
+    //     type: String,
+    //     required: true
+    // },
+    price: {
+        type: Number,
+        default: 0,
+        min: 0
     },
     approvalStatus: {
         type: String,
