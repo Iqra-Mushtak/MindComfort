@@ -12,7 +12,7 @@ const Subscription = require('../models/Subscription');
 const createPodcast = async (req, res) => {
     try {
         const { title, description, startTime, endTime, price } = req.body;
-        if (!title || !description || !startTime || !endTime || !price) {
+        if (!title || !description || !startTime || !endTime || price === undefined || price === null) {
             return res.status(400).json({ message: 'All fields are required' });
         }
 
@@ -47,7 +47,6 @@ const createPodcast = async (req, res) => {
             startTime: new Date(startTime),
             endTime: new Date(endTime),
             price: price !== undefined ? Number(price) : 0, 
-            coverImage,
             speaker: req.user._id,
             approvalStatus: 'pending',
             streamStatus: 'scheduled',
@@ -162,6 +161,59 @@ const getApprovedPodcasts = async (req, res) => {
             success: false,
             error: error.message,
             message: 'Failed to retrieve approved podcasts',
+        });
+    }
+};
+
+const getMentorMyPodcasts = async (req, res) => {
+    try {
+        const now = new Date();
+        const mentorPodcasts = await Podcast.find({ speaker: req.user._id })
+        .sort({ startTime: -1 });
+
+        const pending = [];
+        const upcoming = [];
+        const past = [];
+
+        mentorPodcasts.forEach((podcast) => {
+            const podcastData = podcast.toObject();
+            const mapped = {
+                ...podcastData,
+                date: podcastData.startTime,
+                time: new Date(podcastData.startTime).toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                }),
+                purchased: podcastData.purchaseCount || 0,
+                attended: podcastData.listenCount || 0,
+                hasRecording: !!podcastData.recordingUrl
+            };
+
+            if (podcastData.approvalStatus === 'pending') {
+                pending.push({ ...mapped, status: 'pending' });
+                return;
+            }
+
+            const hasEnded = podcastData.streamStatus === 'ended' || new Date(podcastData.endTime) < now;
+            if (hasEnded) {
+                past.push({ ...mapped, status: 'ended' });
+            } else {
+                upcoming.push({ ...mapped, status: 'upcoming' });
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            pending,
+            upcoming,
+            past
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to retrieve mentor podcasts'
         });
     }
 };
@@ -702,6 +754,7 @@ const deletePodcastRecording = async (req, res) => {
 
 module.exports = { 
     createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, 
+    getMentorMyPodcasts,
     startPodcastStream, endPodcastStream, joinPodcastStream, moderatePodcastComment, 
     addPodcastComment, getPodcastComments,
     getPodcastById, getClientUpcomingPodcasts, getClientMyLibrary, getPodcastRecording, deletePodcastRecording 

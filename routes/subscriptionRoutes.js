@@ -8,6 +8,6 @@ router.get('/status', protect, getMySubscriptionStatus);
 router.get('/type/:type', protect, getSubscriptionByType);
 router.post('/renew', protect, renewSubscription);
 router.put('/cancel/:subscriptionId', protect, cancelSubscription);
-router.post('podcast/:podcastId', protect, purchaseIndividualPodcast);
+router.post('/podcast/:podcastId', protect, purchaseIndividualPodcast);
 
 module.exports = router;

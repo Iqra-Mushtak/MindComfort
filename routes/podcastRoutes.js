@@ -6,13 +6,14 @@ const { podcastCommentLimiter } = require('../middleware/rateLimiter');
 const { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, 
     startPodcastStream, endPodcastStream, joinPodcastStream, moderatePodcastComment, 
     addPodcastComment, getPodcastComments,
-    getPodcastById, getClientUpcomingPodcasts, getClientMyLibrary, getPodcastRecording, deletePodcastRecording 
+    getPodcastById, getClientUpcomingPodcasts, getClientMyLibrary, getPodcastRecording, deletePodcastRecording, getMentorMyPodcasts 
 } = require('../controllers/podcastController');
 
 router.post('/', protect, mentorOnly, createPodcast);
 router.get('/pending', protect, adminOnly, getPendingPodcasts);
 router.patch('/:id/approval', protect, adminOnly, updatePodcastApproval);
 router.get('/approved', protect, getApprovedPodcasts);
+router.get('/mentor/my', protect, mentorOnly, getMentorMyPodcasts);
 router.put('/:id/start-stream', protect, mentorOnly, startPodcastStream);
 router.put('/:id/end-stream', protect, mentorOnly, endPodcastStream);
 router.get('/:id/join-stream', protect, verifySubscription('podcast'), joinPodcastStream);
