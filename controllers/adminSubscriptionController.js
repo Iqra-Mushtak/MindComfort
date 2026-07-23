@@ -172,7 +172,7 @@ exports.updatePaymentStatus = async (req, res) => {
 
 exports.overrideSubscription = async (req, res) => {
     try {
-        const { userId, planId, referenceId, transactionId, payfastId, payfastReference, notes } = req.body;
+        const { userId, planId, referenceId, transactionId, notes } = req.body;
 
         if (!userId || !planId) {
             return res.status(400).json({ message: 'Missing required fields: userId, planId' });
@@ -191,11 +191,9 @@ exports.overrideSubscription = async (req, res) => {
             planId: plan._id,
             userId,
             transactionId: transactionId || `TXN_ADMIN_${Date.now()}_${userId}`,
-            payfastId: payfastId || null,
-            payfastReference: payfastReference || null,
             amount: plan.price,
             currency: plan.currency,
-            paymentMethod: 'payfast',
+            paymentMethod: 'stripe',
             status: 'completed',
             notes: `Admin override: ${notes || 'Payment verified and recorded'}`,
             createdBy: req.user._id
@@ -205,23 +203,61 @@ exports.overrideSubscription = async (req, res) => {
         const endDate = new Date();
         endDate.setMonth(startDate.getMonth() + plan.durationMonths);
 
-        const subscription = await Subscription.create({
-            userId,
-            planId: plan._id,
-            type: plan.type,
-            referenceId: plan.type === 'podcast' ? referenceId : null,
-            planName: plan.name,
-            planPrice: plan.price,
-            planDurationMonths: plan.durationMonths,
-            startDate,
-            endDate,
-            status: 'active',
-            paymentId: payment._id,
-            paymentStatus: 'completed',
-            isOverridden: true,
-            overriddenBy: req.user._id,
-            overrideNotes: notes || 'Admin override'
-        });
+        let subscription;
+        
+         if (plan.type === 'both') {
+            await Subscription.create({
+                userId,
+                planId: plan._id,
+                type: 'chat',
+                planName: plan.name,
+                planPrice: plan.price,
+                planDurationMonths: plan.durationMonths,
+                startDate,
+                endDate,
+                status: 'active',
+                paymentId: payment._id,
+                paymentStatus: 'completed',
+                isOverridden: true,
+                overriddenBy: req.user._id,
+                overrideNotes: notes || 'Admin override'
+            });
+
+            subscription = await Subscription.create({
+                userId,
+                planId: plan._id,
+                type: 'podcast',
+                planName: plan.name,
+                planPrice: plan.price,
+                planDurationMonths: plan.durationMonths,
+                startDate,
+                endDate,
+                status: 'active',
+                paymentId: payment._id,
+                paymentStatus: 'completed',
+                isOverridden: true,
+                overriddenBy: req.user._id,
+                overrideNotes: notes || 'Admin override'
+            });
+        } else {
+            subscription = await Subscription.create({
+                userId,
+                planId: plan._id,
+                type: plan.type,
+                referenceId: plan.type === 'podcast' ? referenceId : null,
+                planName: plan.name,
+                planPrice: plan.price,
+                planDurationMonths: plan.durationMonths,
+                startDate,
+                endDate,
+                status: 'active',
+                paymentId: payment._id,
+                paymentStatus: 'completed',
+                isOverridden: true,
+                overriddenBy: req.user._id,
+                overrideNotes: notes || 'Admin override'
+            });
+        }
 
         await User.findByIdAndUpdate(userId, { isSubscribed: true });
 

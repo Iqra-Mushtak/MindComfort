@@ -66,6 +66,10 @@ app.use(cors({
     },
     credentials: true
 }));
+
+const webhookRoutes = require('./routes/webhookRoutes');
+app.use('/api/webhooks', webhookRoutes);
+
 app.use(express.json());
 app.use(sanitize);
 

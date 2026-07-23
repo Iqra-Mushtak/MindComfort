@@ -99,7 +99,7 @@ io.on('connection', (socket) => {
                 rawData = payload.args[0];
             }
 
-            console.log("DEBUG: Raw data extracted:", typeof rawData, JSON.stringify(rawData));
+            console.log('Raw data extracted:', typeof rawData, JSON.stringify(rawData));
 
         let chatroomId = null;
 
@@ -117,10 +117,10 @@ io.on('connection', (socket) => {
         if (typeof chatroomId === 'string') {
             chatroomId = chatroomId.trim();
         }
-        console.log("DEBUG: Extracted chatroomId:", chatroomId);
+        console.log('Extracted chatroomId:', chatroomId);
 
         if (!mongoose.Types.ObjectId.isValid(chatroomId)) {
-            console.log("DEBUG: Invalid ID");
+            console.log('Invalid ID');
             if (typeof callback === 'function') {
                 return callback({ status: 'error', message: 'Invalid chatroom ID' });
             }
@@ -133,9 +133,9 @@ io.on('connection', (socket) => {
                 socket.leave(previousSession.chatroomId);
             }
             const chatroom = await Chatroom.findById(chatroomId);
-            console.log("DEBUG: Chatroom found:", !!chatroom);
+            console.log('Chatroom found:', !!chatroom);
             if (!chatroom || !chatroom.isActive) {
-            console.log("DEBUG: Chatroom inactive or not found");
+            console.log('Chatroom inactive or not found');
             if (typeof callback === 'function') {
                 return callback({ status: 'error', message: 'Chatroom not found or is currently inactive' });
             }
@@ -206,7 +206,7 @@ io.on('connection', (socket) => {
                 isSubscribed: socket.user.isSubscribed
             };
             await redisClient.setex(`socket:session:${socket.id}`, 3600, JSON.stringify(sessionData));
-            console.log("DEBUG: Session saved to Redis for socket:", socket.id);
+            console.log('Session saved to Redis for socket:', socket.id);
             socket.join(chatroomId);
 
             const messages = await ChatMessage.find({ chatroomId , isDeleted: false })
@@ -236,8 +236,8 @@ io.on('connection', (socket) => {
                 role: socket.user.role,
             });
         } catch (error) {
-            console.error("DEBUG: Auth failed:", error.message);
-            console.error("DEBUG: Join Room Error:", error);
+            console.error('Auth failed:', error.message);
+            console.error('Join Room Error:', error);
             sendJoinAck({ status: 'error', message: 'An error occurred while joining the chatroom' });
         }
     });
@@ -270,13 +270,13 @@ io.on('connection', (socket) => {
         const session = sessionRaw ? JSON.parse(sessionRaw) : null;
 
         if (!session || session.chatroomId !== chatroomId) {
-            console.log(`DEBUG: Session verification failed for socket ${socket.id}`);
-            console.log('DEBUG: sessionRaw=', sessionRaw, 'payload=', JSON.stringify(rawPayload));
+            console.log(`Session verification failed for socket ${socket.id}`);
+            console.log('Session:', sessionRaw, 'payload:', JSON.stringify(rawPayload));
             return socket.emit('messageError', 'Connection reference match failed.');
         }
 
         if (!content || !content.toString().trim()) {
-            console.log(`DEBUG: Missing message content for socket ${socket.id}`, JSON.stringify(rawPayload));
+            console.log(`Missing message content for socket ${socket.id}`, JSON.stringify(rawPayload));
             return socket.emit('messageError', 'Message content is required.');
         }
 

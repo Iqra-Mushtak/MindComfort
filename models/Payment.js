@@ -9,7 +9,11 @@ const paymentSchema = new mongoose.Schema({
     planId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Plan',
-        required: true
+        default: null
+    },
+    referenceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -21,14 +25,6 @@ const paymentSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
-    payfastId: {
-        type: String,
-        default: null
-    },
-    payfastReference: {
-        type: String,
-        default: null
-    },
     amount: {
         type: Number,
         required: true
@@ -39,7 +35,7 @@ const paymentSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['credit_card', 'debit_card', 'bank_transfer', 'mobile_wallet', 'payfast'],
+        enum: ['payfast', 'free'],
         default: 'payfast',
         required: true
     },
@@ -48,7 +44,7 @@ const paymentSchema = new mongoose.Schema({
         enum: ['pending', 'completed', 'failed', 'refunded'],
         default: 'pending'
     },
-    payfastStatus: {
+    pfPaymentId: {
         type: String,
         default: null
     },

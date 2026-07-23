@@ -638,7 +638,7 @@ const getClientUpcomingPodcasts = async (req, res) => {
             $or: [{ endDate: { $gt: now } }, { endDate: null }]
         }).select('referenceId type');
 
-        const hasPlanAccess = userSubs.some(s => s.type === 'podcast' || s.type === 'both');
+        const hasPlanAccess = userSubs.some(s => s.type === 'podcast' && !s.referenceId);
         const purchasedIds = new Set(userSubs.filter(s => s.referenceId).map(s => s.referenceId.toString()));
 
         const podcasts = upcomingPodcasts.map(p => ({
@@ -664,7 +664,7 @@ const getClientMyLibrary = async (req, res) => {
             $or: [{ endDate: { $gt: now } }, { endDate: null }]
         }).select('referenceId type status createdAt');
 
-        const hasPlanAccess = subscriptions.some(s => !s.referenceId);
+        const hasPlanAccess = subscriptions.some(s => s.type === 'podcast' && !s.referenceId);
         let podcasts = [];
 
         if (hasPlanAccess) {

@@ -22,7 +22,7 @@ const verifySubscription = (moduleType) => async (req, res, next) => {
         if (req.user.role === 'client') {
             const activeSub = await Subscription.findOne({
                 userId: req.user._id,
-                type: { $in: [moduleType, 'both'] },
+                type: moduleType,
                 status: 'active',
                 $or: [
                     { endDate: { $gt: new Date() } },

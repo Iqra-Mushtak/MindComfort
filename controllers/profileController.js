@@ -21,13 +21,13 @@ const buildSubscriptionInfo = async (userId) => {
     }).populate('planId', 'name type price durationMonths').populate('referenceId', 'title startTime endTime');
 
     const chatSub = subscriptions.find(s => 
-        (s.type === 'chat' || s.type === 'both') && 
+        s.type === 'chat' && 
         s.planId && 
         (s.endDate === null || s.endDate > now)
     );
 
     const podcastPlanSub = subscriptions.find(s => 
-        (s.type === 'podcast' || s.type === 'both') && 
+        s.type === 'podcast' && 
         s.planId && 
         !s.referenceId &&
         (s.endDate === null || s.endDate > now)
