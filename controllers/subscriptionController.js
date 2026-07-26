@@ -320,6 +320,9 @@ exports.purchaseIndividualPodcast = async (req, res) => {
                     paymentId: payment._id,
                     paymentStatus: 'completed'
                 });
+                await Podcast.findByIdAndUpdate(podcastId, { 
+                    $inc: { purchaseCount: 1 } 
+                });
 
                 return res.status(201).json({
                     message: 'Free podcast access granted',

@@ -4,12 +4,16 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "validate-agora": "node scripts/validateAgoraSetup.js"
   },
   "dependencies": {
     "agora-access-token": "^2.0.4",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.16.1",
+    "b2-sdk": "^1.7.0",
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "dompurify": "^3.4.8",
     "dotenv": "^17.2.3",

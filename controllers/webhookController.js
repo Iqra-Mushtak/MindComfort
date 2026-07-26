@@ -168,6 +168,9 @@ async function createSubscriptionFromPayment({ userId, planId, planType, duratio
             paymentId,
             paymentStatus: 'completed'
         });
+        await Podcast.findByIdAndUpdate(referenceId, { 
+            $inc: { purchaseCount: 1 } 
+        });
         console.log('Individual podcast subscription created:', subscription._id, 'for podcast:', referenceId);
         return;
     }

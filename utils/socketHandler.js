@@ -398,5 +398,7 @@ io.on('connection', (socket) => {
         await redisClient.del(`socket:session:${socket.id}`);
         });
     });
+
+    return io;
 };
 module.exports = initSocket;

@@ -63,6 +63,22 @@ const podcastSchema = new mongoose.Schema({
     recordingUrl: {
         type: String,
         default: null
+    },
+    recordingUploadedAt: {
+        type: Date,
+        default: null
+    },
+    recordingSize: {
+        type: Number,  
+        default: null
+    },
+    purchaseCount: {
+        type: Number,
+        default: 0
+    },
+    listenCount: {
+        type: Number,
+        default: 0
     }
 });
 
