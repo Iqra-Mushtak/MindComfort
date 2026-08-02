@@ -12,13 +12,25 @@ const { uploadToB2, getB2FileUrl } = require('../config/b2');
 
 const createPodcast = async (req, res) => {
     try {
-        const { title, description, startTime, endTime, price } = req.body;
-        if (!title || !description || !startTime || !endTime || price === undefined || price === null) {
-            return res.status(400).json({ message: 'All fields are required' });
+        const { title, description, startTime, endTime, price, sessions } = req.body;
+        
+        if (!title || !description || price === undefined || price === null) {
+            return res.status(400).json({ message: 'Title, description, and price are required' });
         }
 
-        const start = new Date(startTime);
-        const end = new Date(endTime);
+        if (!sessions && (!startTime || !endTime)) {
+            return res.status(400).json({ message: 'Start and end times are required for single sessions' });
+        }
+
+        if (sessions && (!Array.isArray(sessions) || sessions.length === 0)) {
+            return res.status(400).json({ message: 'Sessions array must contain at least one session' });
+        }
+
+        const actualStartTime = startTime || sessions[0].startTime;
+        const actualEndTime = endTime || sessions[sessions.length - 1].endTime;
+
+        const start = new Date(actualStartTime);
+        const end = new Date(actualEndTime);
         const now = new Date();
 
         if (start >= end) {
@@ -29,29 +41,39 @@ const createPodcast = async (req, res) => {
         }
 
         const overLappingPodcast = await Podcast.findOne({
-            approvalStatus: {$in: ['pending', 'approved']},
+            approvalStatus: { $in: ['pending', 'approved'] },
             $and: [
-                {
-                    startTime: { $lt: new Date(endTime) },
-                },
-                {
-                    endTime: { $gt: new Date(startTime) },
-                }
+                { startTime: { $lt: end } },
+                { endTime: { $gt: start } }
             ]
         });
+        
         if (overLappingPodcast) {
-            return res.status(400).json({ message: 'Scheduling conflict! Another podcast session has already reserved or requested this time slot.' });
+            return res.status(400).json({ 
+                message: 'Scheduling conflict! Another podcast session has already reserved or requested this time slot.' 
+            });
         }
-        const podcast = await Podcast.create({
+
+        const podcastData = {
             title,
             description,
-            startTime: new Date(startTime),
-            endTime: new Date(endTime),
-            price: price !== undefined ? Number(price) : 0, 
+            startTime: start,
+            endTime: end,
+            price: Number(price),
             speaker: req.user._id,
             approvalStatus: 'pending',
             streamStatus: 'scheduled',
-        });
+        };
+
+        if (sessions && sessions.length > 0) {
+            podcastData.sessions = sessions.map(session => ({
+                date: new Date(session.date),
+                startTime: new Date(session.startTime),
+                endTime: new Date(session.endTime)
+            }));
+        }
+
+        const podcast = await Podcast.create(podcastData);
 
         const admins = await User.find({ role: 'admin' }).select('_id');
         if (admins.length > 0) {
@@ -72,6 +94,7 @@ const createPodcast = async (req, res) => {
         });
 
     } catch (error) {
+        console.error('Error creating podcast:', error);
         res.status(500).json({
             success: false,
             error: error.message,
@@ -577,6 +600,58 @@ const joinPodcastStream = async (req, res) => {
     }
 };
 
+const adminJoinPodcastStream = async (req, res) => {
+    try{
+        const podcast = await Podcast.findById(req.params.id);
+        if (!podcast){
+            return res.status(404).json({message: 'Podcast session not found.'});
+        }
+        if (podcast.streamStatus !== 'live'){
+            return res.status(400).json({message: 'This podcast session is not currently live.'});
+        }
+
+        const secureAnonymousId = `admin_${req.user._id}`;
+        const anonymousSession = await ClientAnonymousSession.create({
+            userId: req.user._id,
+            chatroomId: podcast._id,
+            onModel: 'Podcast',
+            anonymousId: secureAnonymousId,
+        });
+        await anonymousSession.save();
+
+        const channelName = podcast._id.toString();
+        const uid = 0;
+        const role = RtcRole.SUBSCRIBER;
+        const expirationTime = 7200;
+        const currentTimestamp = Math.floor(Date.now() / 1000);
+        const privilegeExpiredTs = currentTimestamp + expirationTime;
+
+        const rtcToken = RtcTokenBuilder.buildTokenWithUid(
+            process.env.AGORA_APP_ID,
+            process.env.AGORA_APP_CERTIFICATE,
+            channelName,
+            uid,
+            role,
+            privilegeExpiredTs
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Admin connected successfully',
+            token: rtcToken,
+            channelName: channelName,
+            anonymousId: secureAnonymousId,
+            sessionId: anonymousSession._id,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to connect with live session'
+        });
+    }
+};
+
 const moderatePodcastComment = async (req, res) => {
     try {
         const { action, reason } = req.body;
@@ -878,7 +953,7 @@ const deletePodcastRecording = async (req, res) => {
 module.exports = { 
     createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, 
     getMentorMyPodcasts,
-    startPodcastStream, endPodcastStream, joinPodcastStream, moderatePodcastComment, 
+    startPodcastStream, endPodcastStream, joinPodcastStream, adminJoinPodcastStream, moderatePodcastComment, 
     addPodcastComment, getPodcastComments,
     getPodcastById, getClientUpcomingPodcasts, getClientMyLibrary, getPodcastRecording, deletePodcastRecording 
 };

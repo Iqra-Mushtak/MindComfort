@@ -379,6 +379,227 @@ io.on('connection', (socket) => {
         socket.join(`podcast_${podcastId}`);
         console.log(`Mentor ${socket.user._id} joined podcast room: podcast_${podcastId}`);
     });
+
+    socket.on('adminDeleteMessage', async (payload) => {
+        try {
+            if (!isStaffRole(socket.user.role)) {
+                return socket.emit('moderationError', 'Unauthorized: Only admins and moderators can delete messages');
+            }
+
+            const { messageId, chatroomId } = payload;
+            const message = await ChatMessage.findByIdAndUpdate(
+                messageId,
+                { isDeleted: true },
+                { returnDocument: 'after' }
+            );
+
+            if (!message) {
+                return socket.emit('moderationError', 'Message not found');
+            }
+
+            io.to(chatroomId).emit('messageDeleted', {
+                messageId,
+                chatroomId,
+                deletedAt: new Date()
+            });
+
+            socket.emit('moderationSuccess', 'Message deleted successfully');
+        } catch (error) {
+            console.error('Error deleting message:', error);
+            socket.emit('moderationError', error.message);
+        }
+    });
+
+    socket.on('adminWarnUser', async (payload) => {
+        try {
+            if (!isStaffRole(socket.user.role)) {
+                return socket.emit('moderationError', 'Unauthorized: Only admins and moderators can warn users');
+            }
+
+            const { userId, messageId, reason } = payload;
+            const user = await User.findById(userId);
+
+            if (!user) {
+                return socket.emit('moderationError', 'User not found');
+            }
+
+            if (!user.warnings) {
+                user.warnings = 0;
+            }
+            user.warnings += 1;
+            await user.save();
+
+            const Notification = require('../models/Notifications');
+            await Notification.create({
+                recipientId: userId,
+                type: 'chat_warning',
+                message: `You have received a warning for chat conduct. Reason: ${reason || 'Violation of community guidelines'}`,
+                link: '/dashboard'
+            });
+
+            io.to(`user_${userId}`).emit('userWarned', {
+                reason: reason || 'Violation of community guidelines',
+                warnings: user.warnings
+            });
+
+            socket.emit('moderationSuccess', `User warned. Total warnings: ${user.warnings}`);
+        } catch (error) {
+            console.error('Error warning user:', error);
+            socket.emit('moderationError', error.message);
+        }
+    });
+
+    socket.on('adminSuspendUser', async (payload) => {
+        try {
+            if (!isStaffRole(socket.user.role)) {
+                return socket.emit('moderationError', 'Unauthorized: Only admins and moderators can suspend users');
+            }
+
+            const { userId, messageId, reason } = payload;
+            const user = await User.findById(userId);
+
+            if (!user) {
+                return socket.emit('moderationError', 'User not found');
+            }
+
+            user.isSuspended = true;
+            if (!user.suspensionReasons) {
+                user.suspensionReasons = [];
+            }
+            user.suspensionReasons.push({
+                reason: reason || 'Violation of chat guidelines',
+                suspendedBy: socket.user._id,
+                date: new Date()
+            });
+            await user.save();
+
+            const Notification = require('../models/Notifications');
+            await Notification.create({
+                recipientId: userId,
+                type: 'account_suspended',
+                message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
+                link: '/support'
+            });
+
+            io.to(`user_${userId}`).emit('accountSuspended', {
+                reason: reason || 'Violation of community guidelines'
+            });
+
+            socket.emit('moderationSuccess', 'User suspended successfully');
+        } catch (error) {
+            console.error('Error suspending user:', error);
+            socket.emit('moderationError', error.message);
+        }
+    });
+
+    socket.on('adminDeleteComment', async (payload) => {
+        try {
+            if (!isStaffRole(socket.user.role)) {
+                return socket.emit('podcastModerationError', 'Unauthorized: Only admins and moderators can delete comments');
+            }
+
+            const PodcastComment = require('../models/PodcastComment');
+            const { commentId, podcastId } = payload;
+            
+            const comment = await PodcastComment.findByIdAndDelete(commentId);
+            if (!comment) {
+                return socket.emit('podcastModerationError', 'Comment not found');
+            }
+
+            io.to(`podcast_${podcastId}`).emit('commentDeleted', {
+                commentId,
+                podcastId,
+                deletedAt: new Date()
+            });
+
+            socket.emit('podcastModerationSuccess', 'Comment deleted successfully');
+        } catch (error) {
+            console.error('Error deleting comment:', error);
+            socket.emit('podcastModerationError', error.message);
+        }
+    });
+
+    socket.on('adminWarnPodcastUser', async (payload) => {
+        try {
+            if (!isStaffRole(socket.user.role)) {
+                return socket.emit('podcastModerationError', 'Unauthorized: Only admins and moderators can warn users');
+            }
+
+            const { userId, commentId, reason } = payload;
+            const user = await User.findById(userId);
+
+            if (!user) {
+                return socket.emit('podcastModerationError', 'User not found');
+            }
+
+            if (!user.warnings) {
+                user.warnings = 0;
+            }
+            user.warnings += 1;
+            await user.save();
+
+            const Notification = require('../models/Notifications');
+            await Notification.create({
+                recipientId: userId,
+                type: 'podcast_warning',
+                message: `You have received a warning for podcast comment conduct. Reason: ${reason || 'Violation of community guidelines'}`,
+                link: '/dashboard'
+            });
+
+            io.to(`user_${userId}`).emit('userWarned', {
+                reason: reason || 'Violation of community guidelines',
+                warnings: user.warnings
+            });
+
+            socket.emit('podcastModerationSuccess', `User warned. Total warnings: ${user.warnings}`);
+        } catch (error) {
+            console.error('Error warning user:', error);
+            socket.emit('podcastModerationError', error.message);
+        }
+    });
+
+    socket.on('adminSuspendPodcastUser', async (payload) => {
+        try {
+            if (!isStaffRole(socket.user.role)) {
+                return socket.emit('podcastModerationError', 'Unauthorized: Only admins and moderators can suspend users');
+            }
+
+            const { userId, commentId, reason } = payload;
+            const user = await User.findById(userId);
+
+            if (!user) {
+                return socket.emit('podcastModerationError', 'User not found');
+            }
+
+            user.isSuspended = true;
+            if (!user.suspensionReasons) {
+                user.suspensionReasons = [];
+            }
+            user.suspensionReasons.push({
+                reason: reason || 'Violation of podcast guidelines',
+                suspendedBy: socket.user._id,
+                date: new Date()
+            });
+            await user.save();
+
+            const Notification = require('../models/Notifications');
+            await Notification.create({
+                recipientId: userId,
+                type: 'account_suspended',
+                message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
+                link: '/support'
+            });
+
+            io.to(`user_${userId}`).emit('accountSuspended', {
+                reason: reason || 'Violation of community guidelines'
+            });
+
+            socket.emit('podcastModerationSuccess', 'User suspended successfully');
+        } catch (error) {
+            console.error('Error suspending user:', error);
+            socket.emit('podcastModerationError', error.message);
+        }
+    });
     socket.on('disconnect', async () => {
         const sessionRaw = await redisClient.get(`socket:session:${socket.id}`);
         if (sessionRaw) {

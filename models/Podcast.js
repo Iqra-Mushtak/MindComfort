@@ -25,10 +25,17 @@ const podcastSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
-    // coverImage: {
-    //     type: String,
-    //     required: true
-    // },
+    sessions: [{
+        date: {
+            type: Date
+        },
+        startTime: {
+            type: Date
+        },
+        endTime: {
+            type: Date
+        }
+    }],
     price: {
         type: Number,
         default: 0,
@@ -83,4 +90,3 @@ const podcastSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('Podcast', podcastSchema);
-

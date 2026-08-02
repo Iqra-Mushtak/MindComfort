@@ -2,6 +2,7 @@ const Subscription = require('../models/Subscription');
 const Payment = require('../models/Payment');
 const Plan = require('../models/Plan');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 
 exports.getAllSubscriptions = async (req, res) => {
     try {
@@ -123,9 +124,15 @@ exports.getPaymentByTransactionId = async (req, res) => {
     try {
         const { transactionId } = req.params;
 
-        const payment = await Payment.findOne({ transactionId })
+        let payment = await Payment.findOne({ transactionId })
             .populate('userId', 'username email')
             .populate('subscriptionId');
+
+        if (!payment && mongoose.Types.ObjectId.isValid(transactionId)) {
+            payment = await Payment.findById(transactionId)
+                .populate('userId', 'username email')
+                .populate('subscriptionId');
+        }
 
         if (!payment) {
             return res.status(404).json({ message: 'Payment not found' });
@@ -311,7 +318,7 @@ exports.suspendSubscription = async (req, res) => {
         const subscription = await Subscription.findByIdAndUpdate(
             subscriptionId,
             { status: 'suspended', overrideNotes: reason || 'Admin suspended' },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!subscription) {

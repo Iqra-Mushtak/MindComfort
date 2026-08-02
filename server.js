@@ -96,7 +96,6 @@ app.use('/api/podcasts', podcastRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
-app.use('/api/plans', planRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {

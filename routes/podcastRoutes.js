@@ -4,7 +4,7 @@ const { protect, mentorOnly, adminOrModerator, adminOnly } = require('../middlew
 const { verifySubscription, verifyPodcastRecordingAccess } = require('../middleware/subscriptionMiddleware');
 const { podcastCommentLimiter } = require('../middleware/rateLimiter');
 const { createPodcast, getPendingPodcasts, updatePodcastApproval, getApprovedPodcasts, 
-    startPodcastStream, endPodcastStream, joinPodcastStream, moderatePodcastComment, 
+    startPodcastStream, endPodcastStream, joinPodcastStream, adminJoinPodcastStream, moderatePodcastComment, 
     addPodcastComment, getPodcastComments,
     getPodcastById, getClientUpcomingPodcasts, getClientMyLibrary, getPodcastRecording, deletePodcastRecording, getMentorMyPodcasts 
 } = require('../controllers/podcastController');
@@ -17,6 +17,7 @@ router.get('/mentor/my', protect, mentorOnly, getMentorMyPodcasts);
 router.put('/:id/start-stream', protect, mentorOnly, startPodcastStream);
 router.put('/:id/end-stream', protect, mentorOnly, endPodcastStream);
 router.get('/:id/join-stream', protect, verifySubscription('podcast'), joinPodcastStream);
+router.get('/:id/admin/join-stream', protect, adminOnly, adminJoinPodcastStream);
 router.post('/:id/comment', protect, podcastCommentLimiter, addPodcastComment);
 router.get('/:id/comments', protect, getPodcastComments);
 router.put('/:id/comments/:commentId/moderate', protect, adminOrModerator, moderatePodcastComment);

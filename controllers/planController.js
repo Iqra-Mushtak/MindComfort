@@ -123,7 +123,7 @@ exports.deactivatePlan = async (req, res) => {
         const plan = await Plan.findByIdAndUpdate(
             id,
             { isActive: false, updatedBy: req.user._id },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!plan) {
@@ -146,7 +146,7 @@ exports.reactivatePlan = async (req, res) => {
         const plan = await Plan.findByIdAndUpdate(
             id,
             { isActive: true, updatedBy: req.user._id },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!plan) {

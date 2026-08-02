@@ -8,6 +8,7 @@ const MentorProfile = require("../models/MentorProfile");
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { uploadToB2, getB2FileUrl } = require('../config/b2');
 
 exports.createAdmin = async (req, res) => {
   try {
@@ -273,9 +274,7 @@ exports.submitMentorApplication = async (req, res) => {
       declaration,
     } = req.body;
 
-    const files = req.files || {};
-    const cnicFile = files.cnicDocument?.[0];
-    const educationFile = files.educationDocument?.[0];
+    const combinedFile = req.file; 
     const coverLetterText = typeof req.body.coverLetterText === 'string' ? req.body.coverLetterText : '';
 
     const user = req.user;
@@ -305,7 +304,6 @@ exports.submitMentorApplication = async (req, res) => {
     if (Array.isArray(qualification)) {
       qualifications = qualification;
     } else if (typeof qualification === 'string' && qualification.length) {
-    
       try {
         const parsed = JSON.parse(qualification);
         if (Array.isArray(parsed)) qualifications = parsed;
@@ -328,10 +326,10 @@ exports.submitMentorApplication = async (req, res) => {
       return res.status(400).json({ message: 'Cover letter should not exceed 4000 words.' });
     }
 
-    // Documents are required
-    if (!cnicFile || !educationFile) {
-      return res.status(400).json({ message: 'CNIC and educational documents are required.' });
+    if (!combinedFile) {
+      return res.status(400).json({ message: 'Combined document (CNIC, Education, Experience, Photo) is required.' });
     }
+
     const application = new MentorApplication({
       mentorId: user._id,
       fullName,
@@ -340,8 +338,7 @@ exports.submitMentorApplication = async (req, res) => {
       experience,
       expertise: Array.isArray(expertise) ? expertise : (typeof expertise === 'string' ? expertise.split(',').map(e=>e.trim()) : []),
       documents: {
-        cnicDocument: `/uploads/mentor-documents/${cnicFile.filename}`,
-        educationDocument: `/uploads/mentor-documents/${educationFile.filename}`,
+        combinedDocument: `/uploads/mentor-documents/${combinedFile.filename}`, // Save single file path
         coverLetter: coverLetterText.trim() ? coverLetterText.trim() : undefined,
       },
       declaration,
@@ -350,34 +347,29 @@ exports.submitMentorApplication = async (req, res) => {
 
     await application.save();
 
-  const admins = await User.find({ role: 'admin' }).select('_id');
-  if (admins.length > 0) {
-    const adminIds = admins.map(admin => admin._id);
-    await NotificationService.sendBulkNotifications({
-      recipientIds: adminIds,
-      type: 'mentor_application_submitted',
-      message: `New mentor application from ${fullName}. Expertise: ${Array.isArray(expertise) ? expertise.join(', ') : expertise}`,
-      link: `/admin/mentor-applications/${application._id}`,
-      channels: ['in-app']
-    });
-  }
+    const admins = await User.find({ role: 'admin' }).select('_id');
+    if (admins.length > 0) {
+      const adminIds = admins.map(admin => admin._id);
+      await NotificationService.sendBulkNotifications({
+        recipientIds: adminIds,
+        type: 'mentor_application_submitted',
+        message: `New mentor application from ${fullName}. Expertise: ${Array.isArray(expertise) ? expertise.join(', ') : expertise}`,
+        link: `/admin/mentor-applications/${application._id}`,
+        channels: ['in-app']
+      });
+    }
 
     res.status(201).json({
-      message:
-        "Application submitted successfully! Your account status is now 'Pending' for Admin review.",
+      message: "Application submitted successfully! Your account status is now 'Pending' for Admin review.",
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error submitting application", error: error.message });
+    res.status(500).json({ message: "Error submitting application", error: error.message });
   }
 };
+
 exports.adminReviewMentor = async (req, res) => {
   try {
-    // console.log("Entering adminReviewMentor controller");
     const { mentorId, decision, reason } = req.body;
-    // console.log("Mentor ID received:", mentorId);
-
     if (!["approved", "rejected"].includes(decision)) {
       return res.status(400).json({
         message: "Invalid decision. Must be 'approved' or 'rejected'.",

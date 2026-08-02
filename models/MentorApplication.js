@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-
 const mentorApplicationSchema = new mongoose.Schema(
   {
     mentorId: {
@@ -28,13 +27,9 @@ const mentorApplicationSchema = new mongoose.Schema(
       required: true,
     },
     documents: {
-      cnicDocument: {
+      combinedDocument: {
         type: String,
-        required: true,
-      },
-      educationDocument: {
-        type: String,
-        required: true,
+        required: true, // The single PDF containing CNIC, Education, Experience, Photo
       },
       coverLetter: {
         type: String,
@@ -52,5 +47,4 @@ const mentorApplicationSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 module.exports = mongoose.model("MentorApplication", mentorApplicationSchema);

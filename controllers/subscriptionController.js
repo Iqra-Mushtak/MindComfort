@@ -211,7 +211,7 @@ exports.renewSubscription = async (req, res) => {
                 paymentStatus: 'completed',
                 status: 'active'
             },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         res.status(200).json({

@@ -76,7 +76,7 @@ const markAsRead = async (req, res) => {
         const notification = await Notification.findByIdAndUpdate(
             notificationId,
             { isRead: true },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!notification) {

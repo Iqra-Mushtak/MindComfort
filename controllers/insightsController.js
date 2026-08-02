@@ -19,6 +19,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
             chatrooms,
             pendingReports,
             pendingPodcasts,
+            mentorApplications,  
             mentorProfiles,
             activeSubscriptions,
             expiredSubscriptions,
@@ -26,7 +27,10 @@ exports.getAdminDashboardInsights = async (req, res) => {
             activeChatSubs,
             activePodcastSubs,
             completedPayments,
-            totalRevenueAgg
+            revenueAgg,
+            latestApplications,
+            latestPodcasts,
+            latestReports
         ] = await Promise.all([
             User.find({}),
             Chatroom.find({}),
@@ -50,11 +54,30 @@ exports.getAdminDashboardInsights = async (req, res) => {
                 status: 'active', 
                 $or: [{ endDate: { $gt: now } }, { endDate: null }] 
             }),
-            Payment.countDocuments({ status: 'completed' }),
-            Payment.aggregate([
-                { $match: { status: 'completed' } },
-                { $group: { _id: null, total: { $sum: '$amount' } } }
-            ])
+            Subscription.countDocuments({ 
+                status: 'active',
+                paymentStatus: 'completed'
+            }),
+            Subscription.aggregate([
+                { $match: { 
+                    status: 'active',
+                    paymentStatus: 'completed'
+                }},
+                { $group: { _id: null, total: { $sum: '$planPrice' } } }
+            ]),
+            MentorApplication.find({ status: 'pending' })
+                .populate('mentorId', 'username email')
+                .sort({ createdAt: -1 })
+                .limit(3),
+            Podcast.find({ approvalStatus: 'pending' })
+                .populate('speaker', 'username email')
+                .sort({ createdAt: -1 })
+                .limit(3),
+            ChatReports.find({ status: 'pending' })
+                .populate('messageId', 'content')
+                .populate('reportedBy', 'username')
+                .sort({ createdAt: -1 })
+                .limit(3)
         ]);
 
         const activityKeys = await redisClient.keys(`activity:chatroom:*:total:${date}`);
@@ -118,7 +141,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
                 suspendedSubscriptions: suspendedSubscriptions,
                 activeChatSubscriptions: activeChatSubs,
                 activePodcastSubscriptions: activePodcastSubs,
-                totalRevenue: totalRevenueAgg[0]?.total || 0,
+                totalRevenue: revenueAgg[0]?.total || 0, 
                 completedPayments: completedPayments
             },
             plans: {
@@ -135,11 +158,28 @@ exports.getAdminDashboardInsights = async (req, res) => {
                 totalListenCount: (await Podcast.aggregate([
                     { $group: { _id: null, total: { $sum: "$listenCount" } } }
                 ]))[0]?.total || 0
-            }
+            },
+            quickView: {
+                applications: latestApplications.map(app => ({
+                    name: app.fullName || app.mentorId?.username || 'Unknown Applicant',
+                    time: app.createdAt ? new Date(app.createdAt).toLocaleString() : 'Recently'
+                })),
+                podcasts: latestPodcasts.map(pod => ({
+                    title: pod.title || 'Untitled Podcast',
+                    speaker: pod.speaker?.username || 'Unknown Speaker',
+                    time: pod.createdAt ? new Date(pod.createdAt).toLocaleString() : 'Recently'
+                })),
+                reports: latestReports.map(rep => ({
+                    title: rep.reason || 'Reported Message',
+                    speaker: rep.reportedBy?.username || 'Unknown User',
+                    time: rep.createdAt ? new Date(rep.createdAt).toLocaleString() : 'Recently'
+                }))
+}
         };
 
         res.status(200).json({ insights });
     } catch (error) {
+        console.error("Error in getAdminDashboardInsights:", error);
         res.status(500).json({ message: 'Error generating system insights', error: error.message });
     }
 };
