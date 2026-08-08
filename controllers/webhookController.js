@@ -3,238 +3,206 @@ const Payment = require('../models/Payment');
 const User = require('../models/User');
 const Plan = require('../models/Plan');
 const Podcast = require('../models/Podcast');
-const payfast = require('../config/payfast');
+const { verifyWebhookSignature, getPaymentIntent } = require('../config/stripe');
 const mongoose = require('mongoose');
+const express = require('express');
 
-exports.handlePayFastITN = async (req, res) => {
-    res.setHeader('Content-Type', 'text/plain');
-    res.status(200).send('OK');
+exports.handleStripeWebhook = async (req, res) => {
+    let responseSent = false;
+    
+    const sendResponse = (status, data) => {
+        if (!responseSent) {
+            responseSent = true;
+            res.status(status).json(data);
+        }
+    };
 
     try {
-        const pfData = req.body;
+        const sig = req.headers['stripe-signature'];
         
-        console.log('PayFast ITN webhook received');
-        console.log('Raw ITN Data:', pfData);
-
-        const normalizedData = {};
-        for (const key in pfData) {
-            normalizedData[key] = String(pfData[key]);
+        if (!req.rawBody) {
+            console.error('CRITICAL: req.rawBody is undefined');
+            return sendResponse(200, { received: true });
         }
         
-        console.log('Normalized Data:', normalizedData);
-
-        const clientIp = req.ip || req.connection.remoteAddress;
-        console.log('Client IP:', clientIp);
-        
-        if (!payfast.isTestMode && !payfast.isValidPayFastIP(clientIp)) {
-            console.error('Invalid PayFast IP:', clientIp);
-            return;
-        }
-
-        const signature = normalizedData.signature;
-        console.log('Received Signature:', signature);
-        
-        const receivedMerchantId = normalizedData.merchant_id;
-        const expectedMerchantId = process.env.PAYFAST_MERCHANT_ID;
-        console.log('Merchant ID - Expected:', expectedMerchantId, 'Received:', receivedMerchantId);
-        
-        if (receivedMerchantId !== expectedMerchantId) {
-            console.error('Merchant ID mismatch. Rejecting webhook.');
-            return;
+        let event;
+        try {
+            event = verifyWebhookSignature(req.rawBody, sig);
+        } catch (verifyError) {
+            console.error('Webhook signature verification failed:', verifyError.message);
+            return sendResponse(200, { received: true });
         }
         
-        const isValid = await payfast.verifySignature(
-            normalizedData, 
-            signature
-        );
+        console.log('Stripe webhook received:', event.type);
 
-        console.log('Signature Valid:', isValid);
-
-        if (!isValid) {
-            console.warn('PayFast ITN signature verification failed');
-        }
-
-        const paymentStatus = normalizedData.payment_status;
-        const paymentId = normalizedData.custom_str3;
-        const userId = normalizedData.custom_str1;
-        const planId = normalizedData.custom_str2;
-        const planType = normalizedData.custom_str4;
-        const durationMonths = parseInt(normalizedData.custom_str5) || 0;
-        const referenceId = normalizedData.custom_str6 || null;
-        const pfPaymentId = normalizedData.pf_payment_id;
-
-        console.log('Extracted Payment Data:');
-        console.log('- paymentStatus:', paymentStatus);
-        console.log('- paymentId:', paymentId);
-        console.log('- userId:', userId);
-        console.log('- planId:', planId);
-        console.log('- planType:', planType);
-        console.log('- referenceId:', referenceId);
-        console.log('- pfPaymentId:', pfPaymentId);
-
-        console.log('Payment Status:', paymentStatus);
-        console.log('Payment ID:', paymentId);
-        console.log('User ID:', userId);
-        console.log('Plan ID:', planId);
-
-        if (!paymentId || !userId) {
-            console.error('Missing paymentId or userId in ITN data');
-            return;
-        }
-
-        const payment = await Payment.findById(paymentId);
-        if (!payment) {
-            console.error('Payment not found in DB:', paymentId);
-            return;
-        }
-
-        console.log('Found Payment:', payment);
-        let actualReferenceId = referenceId;
-        if (!actualReferenceId && payment.referenceId) {
-            actualReferenceId = payment.referenceId.toString();
-            console.log('Using referenceId from Payment record:', actualReferenceId);
-        }
-        if (payment.status === 'completed') {
-            console.log('Payment already completed, skipping');
-            return;
-        }
-
-        if (paymentStatus === 'COMPLETE') {
-            payment.status = 'completed';
-            payment.pfPaymentId = pfPaymentId;
-            await payment.save();
-            console.log('Payment status updated to completed');
-
-            await createSubscriptionFromPayment({
-                userId,
-                planId,
-                planType,
-                durationMonths,
-                referenceId: actualReferenceId,
-                paymentId: payment._id,
-                amount: parseFloat(normalizedData.amount_gross)
-            });
-
-            console.log(`Payment ${paymentId} completed successfully`);
-        } else if (paymentStatus === 'FAILED' || paymentStatus === 'CANCELLED') {
-            payment.status = 'failed';
-            payment.pfPaymentId = pfPaymentId;
-            await payment.save();
-            console.log(`Payment ${paymentId} failed or cancelled`);
-        } else if (paymentStatus === 'INCOMPLETE') {
-            payment.pfPaymentId = pfPaymentId;
-            await payment.save();
-            console.log(`Payment ${paymentId} incomplete - EFT pending`);
-        } else {
-            console.log('Unknown payment status:', paymentStatus);
+        if (event.type === 'checkout.session.completed') {
+            console.log('Processing checkout.session.completed');
+            const session = event.data.object;
+            
+            try {
+                if (session.payment_status === 'paid') {
+                    const paymentId = session.metadata?.paymentId;
+                    
+                    if (!paymentId) {
+                        console.error('No paymentId in metadata');
+                        return sendResponse(200, { received: true });
+                    }
+                    
+                    const payment = await Payment.findById(paymentId);
+                    if (!payment) {
+                        console.error('Payment not found:', paymentId);
+                        return sendResponse(200, { received: true });
+                    }
+                    
+                    if (payment.status !== 'completed') {
+                        payment.status = 'completed';
+                        payment.stripeSessionId = session.id;
+                        payment.stripePaymentIntentId = session.payment_intent;
+                        await payment.save();
+                        console.log('Payment marked completed:', paymentId);
+                        
+                        if (payment.planId) {
+                            try {
+                                const plan = await Plan.findById(payment.planId);
+                                if (plan) {
+                                    await createSubscriptionFromPayment({
+                                        userId: payment.userId,
+                                        planId: payment.planId,
+                                        planType: plan.type,
+                                        durationMonths: plan.durationMonths,
+                                        paymentId: payment._id,
+                                        amount: payment.amount
+                                    });
+                                    console.log('Subscription created');
+                                }
+                            } catch (subError) {
+                                console.error('Subscription creation error:', subError.message);
+                            }
+                        }
+                    }
+                }
+            } catch (sessionError) {
+                console.error('Session processing error:', sessionError.message);
+            }
         }
         
-        console.log('Webhook processing complete');
+        return sendResponse(200, { received: true });
     } catch (error) {
-        console.error('PayFast ITN processing error:', error);
+        console.error('Webhook handler error:', error.message);
+        return sendResponse(200, { received: true });
+    } finally {
+        if (!responseSent) {
+            res.status(200).json({ received: true });
+        }
     }
 };
 
 async function createSubscriptionFromPayment({ userId, planId, planType, durationMonths, referenceId, paymentId, amount }) {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
-    const startDate = new Date();
+    try {
+        const userObjectId = new mongoose.Types.ObjectId(userId);
+        const startDate = new Date();
 
-    console.log('Creating subscription with:');
-    console.log('- userId:', userId);
-    console.log('- planId:', planId);
-    console.log('- planType:', planType);
-    console.log('- referenceId:', referenceId);
+        console.log('Creating subscription with:');
+        console.log('- userId:', userId);
+        console.log('- planId:', planId);
+        console.log('- planType:', planType);
+        console.log('- referenceId:', referenceId);
 
-    if (planType === 'podcast' && !planId) {
-        console.log('Creating individual podcast subscription');
-        
-        if (!referenceId) {
-            console.error('No podcast ID (referenceId) found for podcast purchase');
+        if (planType === 'podcast' && !planId) {
+            console.log('Creating individual podcast subscription');
+            
+            if (!referenceId) {
+                console.error('No podcast ID (referenceId) found for podcast purchase');
+                return;
+            }
+
+            const podcast = await Podcast.findById(referenceId);
+            const subscription = await Subscription.create({
+                userId: userObjectId,
+                planId: null,
+                type: 'podcast',
+                referenceId: referenceId,
+                planName: podcast ? podcast.title : 'Individual Podcast',
+                planPrice: amount,
+                planDurationMonths: 0,
+                startDate,
+                endDate: null, 
+                status: 'active',
+                paymentId,
+                paymentStatus: 'completed'
+            });
+            await Podcast.findByIdAndUpdate(referenceId, { 
+                $inc: { purchaseCount: 1 } 
+            });
+            console.log('Individual podcast subscription created:', subscription._id, 'for podcast:', referenceId);
             return;
         }
 
-        const podcast = await Podcast.findById(referenceId);
-        const subscription = await Subscription.create({
-            userId: userObjectId,
-            planId: null,
-            type: 'podcast',
-            referenceId: referenceId,
-            planName: podcast ? podcast.title : 'Individual Podcast',
-            planPrice: amount,
-            planDurationMonths: 0,
-            startDate,
-            endDate: null, 
-            status: 'active',
-            paymentId,
-            paymentStatus: 'completed'
-        });
-        await Podcast.findByIdAndUpdate(referenceId, { 
-            $inc: { purchaseCount: 1 } 
-        });
-        console.log('Individual podcast subscription created:', subscription._id, 'for podcast:', referenceId);
-        return;
+        if (!planId) {
+            console.error('Missing planId and no podcast type detected');
+            return;
+        }
+
+        const plan = await Plan.findById(planId);
+        if (!plan) {
+            console.error('Plan not found:', planId);
+            return;
+        }
+
+        const endDate = new Date(startDate);
+        endDate.setMonth(endDate.getMonth() + durationMonths);
+
+        if (planType === 'both') {
+            await Subscription.create({
+                userId: userObjectId,
+                planId,
+                type: 'chat',
+                planName: plan.name,
+                planPrice: amount,
+                planDurationMonths: durationMonths,
+                startDate,
+                endDate,
+                status: 'active',
+                paymentId,
+                paymentStatus: 'completed'
+            });
+            await Subscription.create({
+                userId: userObjectId,
+                planId,
+                type: 'podcast',
+                planName: plan.name,
+                planPrice: amount,
+                planDurationMonths: durationMonths,
+                startDate,
+                endDate,
+                status: 'active',
+                paymentId,
+                paymentStatus: 'completed'
+            });
+            console.log('Dual subscriptions created (chat + podcast)');
+        } else {
+            await Subscription.create({
+                userId: userObjectId,
+                planId,
+                type: planType,
+                planName: plan.name,
+                planPrice: amount,
+                planDurationMonths: durationMonths,
+                startDate,
+                endDate,
+                status: 'active',
+                paymentId,
+                paymentStatus: 'completed'
+            });
+            console.log(`Subscription created for type: ${planType}`);
+        }
+
+        await User.findByIdAndUpdate(userObjectId, { isSubscribed: true });
+        console.log('User marked as subscribed');
+    } catch (error) {
+        console.error('ERROR in createSubscriptionFromPayment:', error.message);
+        console.error('   Full error:', error);
     }
-
-    if (!planId) {
-        console.error('Missing planId and no podcast type detected');
-        return;
-    }
-
-    const plan = await Plan.findById(planId);
-    if (!plan) {
-        console.error('Plan not found:', planId);
-        return;
-    }
-
-    const endDate = new Date(startDate);
-    endDate.setMonth(endDate.getMonth() + durationMonths);
-
-    if (planType === 'both') {
-        await Subscription.create({
-            userId: userObjectId,
-            planId,
-            type: 'chat',
-            planName: plan.name,
-            planPrice: amount,
-            planDurationMonths: durationMonths,
-            startDate,
-            endDate,
-            status: 'active',
-            paymentId,
-            paymentStatus: 'completed'
-        });
-        await Subscription.create({
-            userId: userObjectId,
-            planId,
-            type: 'podcast',
-            planName: plan.name,
-            planPrice: amount,
-            planDurationMonths: durationMonths,
-            startDate,
-            endDate,
-            status: 'active',
-            paymentId,
-            paymentStatus: 'completed'
-        });
-        console.log('Dual subscriptions created');
-    } else {
-        await Subscription.create({
-            userId: userObjectId,
-            planId,
-            type: planType,
-            planName: plan.name,
-            planPrice: amount,
-            planDurationMonths: durationMonths,
-            startDate,
-            endDate,
-            status: 'active',
-            paymentId,
-            paymentStatus: 'completed'
-        });
-        console.log(`Subscription created for ${planType}`);
-    }
-
-    await User.findByIdAndUpdate(userObjectId, { isSubscribed: true });
 }
 
 exports.getPaymentStatus = async (req, res) => {
@@ -307,6 +275,84 @@ exports.debugCompletePayment = async (req, res) => {
         });
     } catch (error) {
         console.error('Debug payment completion error:', error);
+        res.status(500).json({ message: 'Error completing payment', error: error.message });
+    }
+};
+
+exports.completePayment = async (req, res) => {
+    try {
+        const { paymentId } = req.body;
+        console.log('\ncompletePayment CALLED');
+        console.log('paymentId:', paymentId);
+
+        if (!paymentId) {
+            console.log('No paymentId in request');
+            return res.status(400).json({ message: 'Payment ID is required' });
+        }
+
+        const payment = await Payment.findById(paymentId);
+        console.log('Payment found:', payment ? 'YES' : 'NO');
+        console.log('Current status:', payment?.status);
+
+        if (!payment) {
+            console.log('Payment record not found in DB');
+            return res.status(404).json({ message: 'Payment not found' });
+        }
+
+        if (payment.status === 'completed') {
+            console.log('ℹAlready completed, returning subscription');
+            const subscription = await Subscription.findOne({ paymentId: payment._id });
+            return res.status(200).json({ 
+                message: 'Payment already completed',
+                payment: {
+                    _id: payment._id,
+                    status: payment.status,
+                    amount: payment.amount,
+                    currency: payment.currency
+                },
+                subscription
+            });
+        }
+
+        console.log('Updating payment status to completed...');
+        payment.status = 'completed';
+        const savedPayment = await payment.save();
+        console.log('Payment SAVED. New status:', savedPayment.status);
+
+        const plan = await Plan.findById(payment.planId);
+        if (!plan) {
+            console.log('Plan not found');
+            return res.status(404).json({ message: 'Plan not found' });
+        }
+
+        console.log('Creating subscription...');
+        await createSubscriptionFromPayment({
+            userId: payment.userId.toString(),
+            planId: payment.planId.toString(),
+            planType: plan.type,
+            durationMonths: plan.durationMonths,
+            referenceId: payment.referenceId,
+            paymentId: payment._id,
+            amount: payment.amount
+        });
+        console.log('Subscription created');
+
+        const subscription = await Subscription.findOne({ paymentId: payment._id });
+        console.log('completePayment SUCCESS\n');
+
+        res.status(200).json({ 
+            message: 'Payment completed successfully',
+            payment: {
+                _id: payment._id,
+                status: payment.status,
+                amount: payment.amount,
+                currency: payment.currency
+            },
+            subscription
+        });
+    } catch (error) {
+        console.error('completePayment ERROR:', error.message);
+        console.error(error.stack);
         res.status(500).json({ message: 'Error completing payment', error: error.message });
     }
 };

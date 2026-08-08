@@ -2,7 +2,7 @@ const Subscription = require('../models/Subscription');
 const Payment = require('../models/Payment');
 const Plan = require('../models/Plan');
 const User = require('../models/User');
-const payfast = require('../config/payfast'); 
+const { createCheckoutSession } = require('../config/stripe'); 
 
 exports.createSubscription = async (req, res) => {
     try {
@@ -65,38 +65,35 @@ exports.createSubscription = async (req, res) => {
             transactionId: `TXN_${Date.now()}_${userId}`,
             amount: plan.price,
             currency: 'PKR',
-            paymentMethod: 'payfast',
+            paymentMethod: 'stripe',
             status: 'pending'
         });
 
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        const backendUrl = process.env.CLIENT_URL?.replace(':3000', ':5000') || 'http://localhost:5000';
-        
-        const payfastData = {
-            merchant_id: String(process.env.PAYFAST_MERCHANT_ID),
-            merchant_key: String(process.env.PAYFAST_MERCHANT_KEY),
-            return_url: `${frontendUrl}/payment-success?payment_id=${payment._id}`,
-            cancel_url: `${frontendUrl}/client/plans?cancelled=true`,
-            notify_url: `${backendUrl}/api/webhooks/payfast`,
-            amount: String(plan.price.toFixed(2)),
-            item_name: String(plan.name),
-            item_description: String(plan.description || `${plan.type} subscription for ${plan.durationMonths} month(s)`),
-            custom_str1: String(userId.toString()),
-            custom_str2: String(plan._id.toString()),
-            custom_str3: String(payment._id.toString()),
-            custom_str4: String(plan.type),
-            custom_str5: String(plan.durationMonths.toString())
-        };
+        try {
+            const metadata = {
+                planId: plan._id.toString(),
+                planType: plan.type,
+                durationMonths: plan.durationMonths.toString(),
+                paymentId: payment._id.toString()
+            };
 
-        const signature = payfast.generateSignature(payfastData);
-        payfastData.signature = signature;
+            const session = await createCheckoutSession({
+                name: plan.name,
+                description: plan.description,
+                price: plan.price
+            }, metadata);
 
-        res.status(201).json({
-            message: 'PayFast payment form created',
-            paymentId: payment._id,
-            payfastData,
-            payfastUrl: payfast.getUrls().process
-        });
+            res.status(201).json({
+                message: 'Stripe checkout session created',
+                paymentId: payment._id,
+                checkoutUrl: session.url,
+                sessionId: session.id
+            });
+        } catch (error) {
+            console.error('Stripe checkout session creation failed:', error.message);
+            await Payment.findByIdAndDelete(payment._id);
+            throw error;
+        }
     } catch (error) {
         console.error('Error creating subscription:', error);
         res.status(500).json({ message: 'Subscription creation failed', error: error.message });
@@ -194,7 +191,7 @@ exports.renewSubscription = async (req, res) => {
             transactionId: `TXN_${Date.now()}_${req.user._id}`,
             amount: plan.price,
             currency: plan.currency,
-            paymentMethod: 'payfast',
+            paymentMethod: 'stripe',
             status: 'completed'
         });
 
@@ -361,38 +358,24 @@ exports.purchaseIndividualPodcast = async (req, res) => {
             transactionId: `POD_${Date.now()}_${userId}`,
             amount: podcastPrice,
             currency: 'PKR',
-            paymentMethod: 'payfast',
+            paymentMethod: 'stripe',
             status: 'pending'
         });
 
         try {
-            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-            const backendUrl = process.env.CLIENT_URL?.replace(':3000', ':5000') || 'http://localhost:5000';
-            
-            const payfastData = {
-                merchant_id: String(process.env.PAYFAST_MERCHANT_ID),
-                merchant_key: String(process.env.PAYFAST_MERCHANT_KEY),
-                return_url: `${frontendUrl}/payment-success?payment_id=${payment._id}`,
-                cancel_url: `${frontendUrl}/client/podcasts?cancelled=true`,
-                notify_url: `${backendUrl}/api/webhooks/payfast`,
-                amount: String(podcastPrice.toFixed(2)),
-                item_name: String(podcast.title),
-                item_description: String('Individual podcast purchase'),
-                custom_str1: String(userId.toString()),
-                custom_str3: String(payment._id.toString()),
-                custom_str4: String('podcast'),
-                custom_str5: String('0'),
-                custom_str6: String(podcast._id.toString())
+            const metadata = {
+                podcastId: podcast._id.toString(),
+                paymentType: 'podcast',
+                paymentId: payment._id.toString()
             };
 
-            const signature = payfast.generateSignature(payfastData);
-            payfastData.signature = signature;
+            const paymentIntent = await createPaymentIntent(podcastPrice, metadata);
 
             res.status(201).json({
-                message: 'PayFast payment form created',
+                message: 'Stripe payment intent created',
                 paymentId: payment._id,
-                payfastData,
-                payfastUrl: payfast.getUrls().process
+                clientSecret: paymentIntent.client_secret,
+                stripePaymentIntentId: paymentIntent.id
             });
         } catch (error) {
             console.error('Podcast payment form creation failed:', error.message);
@@ -403,5 +386,115 @@ exports.purchaseIndividualPodcast = async (req, res) => {
     } catch (error) {
         console.error('Podcast purchase error:', error);
         res.status(500).json({ message: 'Podcast purchase failed', error: error.message });
+    }
+};
+
+exports.getSessionStatus = async (req, res) => {
+    try {
+        const { sessionId } = req.query;
+        const userId = req.user._id;
+
+        if (!sessionId) {
+            return res.status(400).json({ message: 'Session ID is required' });
+        }
+
+        const { getStripeInstance } = require('../config/stripe');
+        const stripe = getStripeInstance();
+
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        
+
+        if (!session) {
+            return res.status(404).json({ message: 'Session not found' });
+        }
+
+        let paymentStatus = 'pending';
+        let payment = null;
+        let subscription = null;
+
+        if (session.payment_status === 'paid') {
+            paymentStatus = 'completed';
+            
+            const paymentId = session.metadata?.paymentId;
+            
+            if (!paymentId) {
+                return res.status(400).json({ message: 'Invalid session metadata' });
+            }
+
+            payment = await Payment.findByIdAndUpdate(
+                paymentId,
+                {
+                    status: 'completed',
+                    stripeSessionId: sessionId,
+                    stripePaymentIntentId: session.payment_intent
+                },
+                { new: true }
+            );
+
+            if (!payment) {
+                return res.status(404).json({ message: 'Payment not found' });
+            }
+
+            subscription = await Subscription.findOne({ paymentId: payment._id });
+
+            if (!subscription && payment.planId) {
+                const plan = await Plan.findById(payment.planId);
+                if (plan) {
+                    await createSubscriptionFromPayment({
+                        userId: payment.userId,
+                        planId: payment.planId,
+                        planType: plan.type,
+                        durationMonths: plan.durationMonths,
+                        paymentId: payment._id,
+                        amount: payment.amount
+                    });
+                    subscription = await Subscription.findOne({ paymentId: payment._id });
+                }
+            } else if (!subscription && payment.referenceId) {
+                // Handle podcast purchase
+                const podcast = await Podcast.findById(payment.referenceId);
+                const user = await User.findById(payment.userId);
+                
+                if (podcast && user) {
+                    user.podcastAccess = user.podcastAccess || [];
+                    if (!user.podcastAccess.includes(podcast._id)) {
+                        user.podcastAccess.push(podcast._id);
+                        await user.save();
+                    }
+                    console.log('Podcast access granted to user');
+                }
+                
+                subscription = await Subscription.findOne({ 
+                    userId: payment.userId, 
+                    referenceId: payment.referenceId 
+                });
+            }
+        } else if (session.payment_status === 'unpaid') {
+            paymentStatus = 'pending';
+            const paymentId = session.metadata?.paymentId;
+            if (paymentId) {
+                payment = await Payment.findById(paymentId);
+            }
+        }
+
+        res.status(200).json({
+            session: {
+                id: session.id,
+                payment_status: session.payment_status,
+                customer_email: session.customer_email,
+            },
+            payment: payment ? {
+                _id: payment._id,
+                status: payment.status,
+                amount: payment.amount,
+                currency: payment.currency,
+                stripeSessionId: sessionId,
+            } : null,
+            subscription: subscription || null,
+            status: paymentStatus
+        });
+    } catch (error) {
+        console.error('Error fetching session status:', error);
+        res.status(500).json({ message: 'Error fetching session status', error: error.message });
     }
 };

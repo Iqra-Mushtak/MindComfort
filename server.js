@@ -94,6 +94,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/podcasts', podcastRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/plans', planRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin', adminRoutes);

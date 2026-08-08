@@ -35,8 +35,8 @@ const paymentSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['payfast', 'free'],
-        default: 'payfast',
+        enum: ['stripe', 'free'],
+        default: 'stripe',
         required: true
     },
     status: {
@@ -44,7 +44,11 @@ const paymentSchema = new mongoose.Schema({
         enum: ['pending', 'completed', 'failed', 'refunded'],
         default: 'pending'
     },
-    pfPaymentId: {
+    stripePaymentIntentId: {
+        type: String,
+        default: null
+    },
+    stripeSessionId: {
         type: String,
         default: null
     },
