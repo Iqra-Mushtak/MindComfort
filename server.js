@@ -85,6 +85,7 @@ const chatRoutes = require('./routes/chatRoutes');
 const podcastRoutes = require('./routes/podcastRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const moderatorRoutes = require('./routes/moderatorRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const adminSubscriptionRoutes = require('./routes/adminSubscriptionRoutes');
 const planRoutes = require('./routes/planRoutes');
@@ -98,6 +99,7 @@ app.use('/api/plans', planRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/moderator', moderatorRoutes);
 
 app.get('/', (req, res) => {
     res.send("The MindComfort Backend is officially running!");

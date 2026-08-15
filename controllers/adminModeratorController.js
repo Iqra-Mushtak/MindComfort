@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const passwordSchema = require('../utils/passwordValidator');
 
 exports.getAllModerators = async (req, res) => {
     try {
@@ -61,12 +63,23 @@ exports.createModerator = async (req, res) => {
             return res.status(400).json({ message: 'User already exists' });
         }
 
+        const validationErrors = passwordSchema.validate(password, { list: true });
+        if (validationErrors.length > 0) {
+            return res.status(400).json({ 
+                message: 'Password is too weak.', 
+                failedRules: validationErrors 
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
         const moderator = new User({
             username,
             email,
-            password, 
+            password: hashedPassword,
             role: 'moderator',
-            isVerified: true
+            isVerified: true,
+            status: 'approved'
         });
 
         await moderator.save();
