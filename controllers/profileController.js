@@ -67,6 +67,34 @@ const buildSubscriptionInfo = async (userId) => {
     };
 };
 
+exports.getPublicMentors = async (req, res) => {
+    try {
+        const mentors = await User.find({ role: 'mentor', status: 'approved', isSuspended: false })
+            .select('username email createdAt');
+
+        const mentorIds = mentors.map(m => m._id);
+        const profiles = await MentorProfile.find({ mentorId: { $in: mentorIds } });
+        const profileMap = new Map(profiles.map(p => [p.mentorId.toString(), p]));
+
+        const merged = mentors.map(m => {
+            const profile = profileMap.get(m._id.toString());
+            return {
+                _id: m._id,
+                username: m.username,
+                fullName: profile?.fullName || m.username,
+                qualification: profile?.qualification || '',
+                experience: profile?.experience || '',
+                expertise: profile?.expertise || '',
+                availabilitySchedule: profile?.availabilitySchedule || []
+            };
+        });
+
+        res.status(200).json({ mentors: merged });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
 exports.getOwnProfile = async (req, res) => {
     try {
         const user = await User.findById(req.user._id).select('-password -otp -otpExpires -resetPasswordToken -pendingEmail');
