@@ -8,6 +8,7 @@ const Chatroom = require('../models/Chatroom');
 const ChatMessage = require('../models/ChatMessage');
 const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 const User = require('../models/User');
+const NotificationService = require('../services/notificationService');
 
 const initSocket = (server) => {
 const allowedOrigins = [
@@ -429,12 +430,12 @@ io.on('connection', (socket) => {
             user.warnings += 1;
             await user.save();
 
-            const Notification = require('../models/Notifications');
-            await Notification.create({
+            await NotificationService.sendNotification({
                 recipientId: userId,
                 type: 'chat_warning',
                 message: `You have received a warning for chat conduct. Reason: ${reason || 'Violation of community guidelines'}`,
-                link: '/dashboard'
+                link: '/dashboard',
+                channels: ['in-app']
             });
 
             io.to(`user_${userId}`).emit('userWarned', {
@@ -473,12 +474,12 @@ io.on('connection', (socket) => {
             });
             await user.save();
 
-            const Notification = require('../models/Notifications');
-            await Notification.create({
+            await NotificationService.sendNotification({
                 recipientId: userId,
                 type: 'account_suspended',
                 message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
-                link: '/support'
+                link: '/support',
+                channels: ['in-app']
             });
 
             io.to(`user_${userId}`).emit('accountSuspended', {
@@ -538,12 +539,12 @@ io.on('connection', (socket) => {
             user.warnings += 1;
             await user.save();
 
-            const Notification = require('../models/Notifications');
-            await Notification.create({
+            await NotificationService.sendNotification({
                 recipientId: userId,
                 type: 'podcast_warning',
                 message: `You have received a warning for podcast comment conduct. Reason: ${reason || 'Violation of community guidelines'}`,
-                link: '/dashboard'
+                link: '/dashboard',
+                channels: ['in-app']
             });
 
             io.to(`user_${userId}`).emit('userWarned', {
@@ -582,12 +583,12 @@ io.on('connection', (socket) => {
             });
             await user.save();
 
-            const Notification = require('../models/Notifications');
-            await Notification.create({
+            await NotificationService.sendNotification({
                 recipientId: userId,
                 type: 'account_suspended',
                 message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
-                link: '/support'
+                link: '/support',
+                channels: ['in-app']
             });
 
             io.to(`user_${userId}`).emit('accountSuspended', {

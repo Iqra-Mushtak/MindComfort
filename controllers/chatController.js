@@ -206,8 +206,18 @@ exports.reviewReports = async (req, res) => {
         report.actionedBy = req.user._id;
     
         if (action === 'deleteMessage' && report.messageId) {
+            const offender = await User.findById(report.messageId.senderId);
             report.messageId.isDeleted = true;
             await report.messageId.save();
+            if (offender) {
+                await NotificationService.sendNotification({
+                    recipientId: offender._id,
+                    type: 'message_deleted',
+                    message: 'A message you sent was removed after review.',
+                    link: `/chatrooms/${report.messageId.chatroomId || ''}`,
+                    channels: ['in-app']
+                });
+            }
         } else if (action === 'suspendUser' && report.messageId) {
             const offender = await User.findById(report.messageId.senderId);
             if (offender) {
@@ -230,17 +240,6 @@ exports.reviewReports = async (req, res) => {
                     recipientId: offender._id,
                     type: 'user_warned',
                     message: `A message you sent was reviewed and a warning was issued.${report.notes ? ` Note: ${report.notes}` : ''}`,
-                    link: `/chatrooms/${report.messageId.chatroomId || ''}`,
-                    channels: ['in-app']
-                });
-            }
-        } else if (action === 'deleteMessage' && report.messageId) {
-            const offender = await User.findById(report.messageId.senderId);
-            if (offender) {
-                await NotificationService.sendNotification({
-                    recipientId: offender._id,
-                    type: 'message_deleted',
-                    message: 'A message you sent was removed after review.',
                     link: `/chatrooms/${report.messageId.chatroomId || ''}`,
                     channels: ['in-app']
                 });

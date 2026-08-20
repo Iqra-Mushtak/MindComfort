@@ -2,6 +2,7 @@ const Chatroom = require('../models/Chatroom');
 const ChatMessage = require('../models/ChatMessage');
 const ChatReports = require('../models/ChatReports');
 const User = require('../models/User');
+const NotificationService = require('../services/notificationService');
 
 exports.getAllChatrooms = async (req, res) => {
     try {
@@ -53,18 +54,27 @@ exports.getChatroomDetails = async (req, res) => {
 
 exports.createChatroom = async (req, res) => {
     try {
-        const { name, topic, mentor, description } = req.body;
+        const { name, description, allowedRoles } = req.body;
+
+        const trimmedName = typeof name === 'string' ? name.trim() : '';
+        if (!trimmedName) {
+            return res.status(400).json({ message: 'Chatroom name is required' });
+        }
+
+        const existingChatroom = await Chatroom.findOne({ name: trimmedName });
+        if (existingChatroom) {
+            return res.status(400).json({ message: 'A chatroom with this name already exists' });
+        }
 
         const chatroom = new Chatroom({
-            name,
-            topic,
-            mentor,
-            description,
-            isActive: true
+            name: trimmedName,
+            description: description ? description.trim() : '',
+            allowedRoles: Array.isArray(allowedRoles) && allowedRoles.length > 0 ? allowedRoles : ['client', 'mentor'],
+            isActive: true,
+            createdBy: req.user?._id
         });
 
         await chatroom.save();
-        await chatroom.populate('mentor', 'username fullName');
 
         res.status(201).json({ message: 'Chatroom created successfully', chatroom });
     } catch (error) {
@@ -75,13 +85,19 @@ exports.createChatroom = async (req, res) => {
 exports.updateChatroom = async (req, res) => {
     try {
         const { chatroomId } = req.params;
-        const { name, topic, description } = req.body;
+        const { name, description, allowedRoles } = req.body;
+
+        const updateData = {
+            ...(name !== undefined && name !== null ? { name: String(name).trim() } : {}),
+            ...(description !== undefined ? { description: String(description).trim() } : {}),
+            ...(allowedRoles ? { allowedRoles } : {})
+        };
 
         const chatroom = await Chatroom.findByIdAndUpdate(
             chatroomId,
-            { name, topic, description },
-            { returnDocument: 'after' }
-        ).populate('mentor', 'username fullName');
+            updateData,
+            { new: true }
+        );
 
         if (!chatroom) {
             return res.status(404).json({ message: 'Chatroom not found' });
@@ -190,12 +206,12 @@ exports.warnChatUser = async (req, res) => {
         user.warnings += 1;
         await user.save();
 
-        const Notification = require('../models/Notifications');
-        await Notification.create({
+        await NotificationService.sendNotification({
             recipientId: userId,
             type: 'chat_warning',
             message: `You have received a warning for chat conduct. Reason: ${reason || 'Violation of community guidelines'}`,
-            link: '/dashboard'
+            link: '/dashboard',
+            channels: ['in-app']
         });
 
         res.status(200).json({ 
@@ -228,12 +244,12 @@ exports.suspendChatUser = async (req, res) => {
         });
         await user.save();
 
-        const Notification = require('../models/Notifications');
-        await Notification.create({
+        await NotificationService.sendNotification({
             recipientId: userId,
             type: 'account_suspended',
             message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
-            link: '/support'
+            link: '/support',
+            channels: ['in-app']
         });
 
         res.status(200).json({ 

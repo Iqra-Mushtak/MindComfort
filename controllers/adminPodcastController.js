@@ -1,6 +1,7 @@
 const Podcast = require('../models/Podcast');
 const PodcastComment = require('../models/PodcastComment');
 const User = require('../models/User');
+const NotificationService = require('../services/notificationService');
 
 exports.getAllPodcasts = async (req, res) => {
     try {
@@ -251,12 +252,12 @@ exports.warnPodcastUser = async (req, res) => {
         user.warnings += 1;
         await user.save();
 
-        const Notification = require('../models/Notifications');
-        await Notification.create({
+        await NotificationService.sendNotification({
             recipientId: userId,
             type: 'podcast_warning',
             message: `You have received a warning for podcast comment conduct. Reason: ${reason || 'Violation of community guidelines'}`,
-            link: '/dashboard'
+            link: '/dashboard',
+            channels: ['in-app']
         });
 
         res.status(200).json({ 
@@ -289,12 +290,12 @@ exports.suspendPodcastCommentUser = async (req, res) => {
         });
         await user.save();
 
-        const Notification = require('../models/Notifications');
-        await Notification.create({
+        await NotificationService.sendNotification({
             recipientId: userId,
             type: 'account_suspended',
             message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
-            link: '/support'
+            link: '/support',
+            channels: ['in-app']
         });
 
         res.status(200).json({ 

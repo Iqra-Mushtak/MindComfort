@@ -73,8 +73,8 @@ const createBulkNotifications = async (req, res) => {
 const markAsRead = async (req, res) => {
     try {
         const { notificationId } = req.params;
-        const notification = await Notification.findByIdAndUpdate(
-            notificationId,
+        const notification = await Notification.findOneAndUpdate(
+            { _id: notificationId, recipient: req.user._id },
             { isRead: true },
             { returnDocument: 'after' }
         );
