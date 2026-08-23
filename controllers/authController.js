@@ -108,7 +108,14 @@ exports.register = async (req, res) => {
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists." });
+      if (existingUser.role === 'mentor' && existingUser.status === 'pending') {
+        return res.status(400).json({ 
+          message: "Account already exists. Please log in or complete your mentor application.",
+          status: 'mentor_pending_application',
+          email: existingUser.email
+        });
+      }
+      return res.status(400).json({ message: "Email already registered. Please log in." });
     }
     const existingUsername = await User.findOne({ username });
     if (existingUsername) {
@@ -264,8 +271,6 @@ exports.resendOTP = async (req, res) => {
 exports.submitMentorApplication = async (req, res) => {
   try {
     const {
-      email,
-      mentorId,
       fullName,
       qualification,
       qualificationOther,
@@ -274,30 +279,31 @@ exports.submitMentorApplication = async (req, res) => {
       declaration,
     } = req.body;
 
-    const combinedFile = req.file; 
     const coverLetterText = typeof req.body.coverLetterText === 'string' ? req.body.coverLetterText : '';
+    const user = req.user; 
 
-    const user = req.user;
-
-    if (user.role !== 'mentor') {
-      return res.status(404).json({ message: "Mentor account not found with this email." });
+    if (user.role === 'mentor' && user.status === 'approved') {
+      return res.status(400).json({ message: "Your account is already an approved mentor account." });
     }
 
-    if(user.email.toLowerCase() !== email.toLowerCase()) {
-      return res.status(403).json({ message: "Identity mismatch." });
-    }
-    if (user.status === 'approved') {
-      return res.status(400).json({ message: "Your account is already approved. Please login." });
-    }
     if (user.isBlacklisted) {
-      return res.status(403).json({ message: "You are ineligible to re-apply." });
+      return res.status(403).json({ message: "You are ineligible to apply." });
     }
+    
     const existingApplication = await MentorApplication.findOne({ 
       mentorId: user._id, 
       status: 'pending' 
     });
     if (existingApplication) {
       return res.status(400).json({ message: "You already have a pending application. Please wait for admin review." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Required document file missing.' });
+    }
+
+    if (!declaration || declaration === 'false' || declaration === false) {
+      return res.status(400).json({ message: "You must agree to the declaration to submit your application." });
     }
 
     let qualifications = [];
@@ -317,18 +323,19 @@ exports.submitMentorApplication = async (req, res) => {
       return res.status(400).json({ message: 'You must provide at least one qualification.' });
     }
 
-    if (!declaration) {
-      return res.status(400).json({ message: "You must agree to the declaration." });
-    }
-
     const coverLetterWordCount = coverLetterText.trim().split(/\s+/).filter(Boolean).length;
     if (coverLetterWordCount > 4000) {
       return res.status(400).json({ message: 'Cover letter should not exceed 4000 words.' });
     }
 
-    if (!combinedFile) {
-      return res.status(400).json({ message: 'Combined document (CNIC, Education, Experience, Photo) is required.' });
+    const targetBucket = process.env.BACKBLAZE_DOCUMENTS_BUCKET_NAME || 'documents-uploads';
+    if (!req.file) {
+      return res.status(400).json({ message: 'Document file is required.' });
     }
+
+    const documentKey = `mentor-documents/${user._id}-${Date.now()}-${req.file.originalname}`;
+    await uploadToB2(documentKey, req.file.buffer, req.file.mimetype, targetBucket);
+    const documentUrl = getB2FileUrl(documentKey, targetBucket);
 
     const application = new MentorApplication({
       mentorId: user._id,
@@ -336,14 +343,17 @@ exports.submitMentorApplication = async (req, res) => {
       qualification: qualifications,
       qualificationOther: qualificationOther || '',
       experience,
-      expertise: Array.isArray(expertise) ? expertise : (typeof expertise === 'string' ? expertise.split(',').map(e=>e.trim()) : []),
+      expertise: Array.isArray(expertise) ? expertise : (typeof expertise === 'string' ? expertise.split(',').map(e => e.trim()) : []),
       documents: {
-        combinedDocument: `/uploads/mentor-documents/${combinedFile.filename}`, // Save single file path
+        document: documentUrl,
         coverLetter: coverLetterText.trim() ? coverLetterText.trim() : undefined,
       },
       declaration,
       status: "pending",
     });
+    user.role = 'mentor';
+    user.status = 'pending';
+    await user.save();
 
     await application.save();
 
@@ -360,7 +370,7 @@ exports.submitMentorApplication = async (req, res) => {
     }
 
     res.status(201).json({
-      message: "Application submitted successfully! Your account status is now 'Pending' for Admin review.",
+      message: "Application submitted successfully! Your application is now pending Admin review.",
     });
   } catch (error) {
     res.status(500).json({ message: "Error submitting application", error: error.message });
@@ -380,7 +390,13 @@ exports.adminReviewMentor = async (req, res) => {
     if (!mentor)
       return res.status(404).json({ message: "Mentor user not found" });
 
-    mentor.status = decision;
+    if (decision === 'approved') {
+      mentor.role = 'mentor';
+      mentor.status = 'approved';
+    } else {
+      mentor.status = 'rejected';
+    }
+    
     await mentor.save();
 
     const mentorApplication = await MentorApplication.findOne({ mentorId, status: 'pending' });

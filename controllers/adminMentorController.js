@@ -33,7 +33,7 @@ exports.getAllMentors = async (req, res) => {
 
         const skip = (page - 1) * limit;
         
-        const mentors = await User.find(filter)
+        const mentorsList = await User.find(filter)
             .select('-password -otp')
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -46,7 +46,7 @@ exports.getAllMentors = async (req, res) => {
             page: parseInt(page),
             limit: parseInt(limit),
             pages: Math.ceil(total / limit),
-            mentors
+            mentors: mentorsList
         });
     } catch (error) {
         console.error("Error in getAllMentors:", error);
@@ -123,7 +123,10 @@ exports.approveMentorApplication = async (req, res) => {
         }
 
         const mentorUserId = application.mentorId;
-        await User.findByIdAndUpdate(mentorUserId, { status: 'approved' });
+        await User.findByIdAndUpdate(mentorUserId, {
+            role: 'mentor',
+            status: 'approved',
+        });
 
         application.status = 'approved';
         await application.save();

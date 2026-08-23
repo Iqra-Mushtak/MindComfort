@@ -27,9 +27,9 @@ const mentorApplicationSchema = new mongoose.Schema(
       required: true,
     },
     documents: {
-      combinedDocument: {
+      document: {
         type: String,
-        required: true, // The single PDF containing CNIC, Education, Experience, Photo
+        required: true,
       },
       coverLetter: {
         type: String,

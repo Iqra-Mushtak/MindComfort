@@ -248,24 +248,41 @@ const startPodcastStream = async (req, res) => {
         if (!podcast) {
             return res.status(404).json({ message: 'Podcast session not found' });
         }
+
         if (podcast.streamStatus === 'live') {
-            if(podcast.speaker.toString() !== req.user._id.toString()){
-                return res.status(400).json({message: 'Unauthorized action.'});
+            if (podcast.speaker.toString() !== req.user._id.toString()) {
+                return res.status(400).json({ message: 'Unauthorized action.' });
             }
             return res.status(200).json({
                 success: true,
-                message: 'Resuming the session.',
+                message: 'Resuming the live session.',
                 token: RtcTokenBuilder.buildTokenWithUid(
                     process.env.AGORA_APP_ID, 
                     process.env.AGORA_APP_CERTIFICATE,
                     podcast._id.toString(),
-                    0,
-                    RtcRole.PUBLISHER),
+                    100,
+                    RtcRole.PUBLISHER
+                ),
                 channelName: podcast._id.toString(),
                 data: podcast,
             });
         }
         
+        if (podcast.streamStatus === 'live' && podcast.agoraSid) {
+            return res.status(200).json({
+                success: true,
+                message: 'Stream already active with recording enabled.',
+                token: RtcTokenBuilder.buildTokenWithUid(
+                    process.env.AGORA_APP_ID, 
+                    process.env.AGORA_APP_CERTIFICATE,
+                    podcast._id.toString(),
+                    100,
+                    RtcRole.PUBLISHER),
+                channelName: podcast._id.toString(),
+                data: podcast,
+            });
+        }
+                
         if (podcast.speaker.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'You are not authorized to start this podcast session' });
         }
@@ -276,7 +293,7 @@ const startPodcastStream = async (req, res) => {
             return res.status(400).json({ message: 'This podcast session has already been started or ended' });
         }
         const channelName = podcast._id.toString();
-        const uid = 0;
+        const uid = 100;         
         const role = RtcRole.PUBLISHER;
         const expirationTime = 7200;
         const currentTimestamp = Math.floor(Date.now() / 1000);
@@ -295,111 +312,91 @@ const startPodcastStream = async (req, res) => {
         let recordingSid = null;
         let recordingError = null;
 
-        // try {
-        //     // Validate B2 credentials first
-        //     console.log('Validating B2/S3 credentials...');
-        //     if (!process.env.BACKBLAZE_APPLICATION_KEY_ID || !process.env.BACKBLAZE_APPLICATION_KEY) {
-        //         throw new Error('B2 credentials (BACKBLAZE_APPLICATION_KEY_ID, BACKBLAZE_APPLICATION_KEY) are missing in .env');
-        //     }
-        //     if (!process.env.BACKBLAZE_BUCKET_NAME || !process.env.BACKBLAZE_REGION) {
-        //         throw new Error('B2 bucket configuration (BACKBLAZE_BUCKET_NAME, BACKBLAZE_REGION) is missing in .env');
-        //     }
-        //     console.log('B2 credentials validated');
+        try {
+            console.log('Validating B2/S3 credentials...');
+            if (!process.env.BACKBLAZE_APPLICATION_KEY_ID || !process.env.BACKBLAZE_APPLICATION_KEY) {
+                throw new Error('B2 credentials (BACKBLAZE_APPLICATION_KEY_ID, BACKBLAZE_APPLICATION_KEY) are missing in .env');
+            }
+            if (!process.env.BACKBLAZE_BUCKET_NAME || !process.env.BACKBLAZE_REGION) {
+                throw new Error('B2 bucket configuration (BACKBLAZE_BUCKET_NAME, BACKBLAZE_REGION) is missing in .env');
+            }
+            console.log('B2 credentials validated');
 
-        //     const headers = getAgoraRestHeaders();
+            const headers = getAgoraRestHeaders();
 
-        //     console.log('Attempting to acquire Agora recording resource...');
-        //     const aquireResponse = await axios.post(
-        //         `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/acquire`,
-        //         {
-        //             cname: channelName,
-        //             uid: "999",
-        //             clientRequest: { resourceExpiredHour: 24, scene: 0 }
-        //         },
-        //         { headers }
-        //     );
-        //     resourceId = aquireResponse.data.resourceId;
-        //     console.log('Agora recording resource acquired:', resourceId);
+            console.log('Attempting to acquire Agora recording resource...');
+            const aquireResponse = await axios.post(
+                `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/acquire`,
+                {
+                    cname: channelName,
+                    uid: "999",
+                    clientRequest: { resourceExpiredHour: 24, scene: 0 }
+                },
+                { headers }
+            );
+            resourceId = aquireResponse.data.resourceId;
+            console.log('Agora recording resource acquired:', resourceId);
 
-        //     const recordingConfig = getAgoraRecordingConfig();
-        //     console.log('Recording config:', JSON.stringify(recordingConfig, null, 2));
+            const recordingConfig = getAgoraRecordingConfig();
+            console.log('Recording config:', JSON.stringify(recordingConfig, null, 2));
 
-        //     // Start recording with S3/B2 storage (NO FALLBACK - must succeed)
-        //     console.log('Starting Agora recording with B2 S3 storage...');
-        //     console.log('   Bucket:', process.env.BACKBLAZE_BUCKET_NAME);
-        //     console.log('   Region:', process.env.BACKBLAZE_REGION);
-        //     console.log('   Endpoint:', process.env.BACKBLAZE_ENDPOINT);
+            console.log('Starting Agora recording with B2 S3 storage...');
+            console.log('   Bucket:', process.env.BACKBLAZE_BUCKET_NAME);
+            console.log('   Region:', process.env.BACKBLAZE_REGION);
+            console.log('   Endpoint:', process.env.BACKBLAZE_ENDPOINT);
 
-        //     const startResponse = await axios.post(
-        //         `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceid/${resourceId}/mode/mix/start`,
-        //         {
-        //             cname: channelName,
-        //             uid: "999",
-        //             clientRequest: recordingConfig
-        //         },
-        //         { headers }
-        //     );
+            const startResponse = await axios.post(
+                `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceid/${resourceId}/mode/mix/start`,
+                {
+                    cname: channelName,
+                    uid: "999",
+                    clientRequest: recordingConfig
+                },
+                { headers }
+            );
 
-        //     recordingSid = startResponse.data.sid;
-        //     console.log('Agora recording started successfully with SID:', recordingSid);
-        //     console.log('Recording will be uploaded to B2 bucket: ' + process.env.BACKBLAZE_BUCKET_NAME);
+            recordingSid = startResponse.data.sid;
+            console.log('Agora recording started successfully with SID:', recordingSid);
+            console.log('Recording will be uploaded to B2 bucket: ' + process.env.BACKBLAZE_BUCKET_NAME);
 
-        // } catch (error) {
-        //     recordingError = error;
-        //     console.error('RECORDING FAILED:', error.message);
-        //     console.error('Error details:', error.response?.data || error);
-        //     console.error('Error status:', error.response?.status);
+        } catch (error) {
+            recordingError = error;
+            console.error('RECORDING FAILED:', error.message);
+            console.error('Error details:', error.response?.data || error);
+            console.error('Error status:', error.response?.status);
 
-        //     // Provide specific troubleshooting guidance
-        //     if (error.message.includes('credentials')) {
-        //         console.error('ACTION: Check your B2 credentials in .env file');
-        //     } else if (error.response?.status === 404 && error.response?.data?.message?.includes('no Route matched')) {
-        //         console.error('ACTION: Agora Cloud Recording credentials mismatch or not enabled');
-        //         console.error('   Option 1: Verify App ID matches REST API credentials in Agora Console');
-        //         console.error('   Option 2: Enable Cloud Recording in Agora Console: https://console.agora.io');
-        //         console.error('   Option 3: Run this diagnostic to verify: node scripts/validateAgoraSetup.js');
-        //     } else if (error.response?.status === 401 || error.response?.status === 403) {
-        //         console.error('ACTION 1: Enable Cloud Recording in Agora Console');
-        //         console.error('   Go to: https://console.agora.io → Your Project → Cloud Recording');
-        //         console.error('ACTION 2: Verify your Agora REST API Key and Secret in .env');
-        //     } else if (error.response?.data?.message?.includes('recording')) {
-        //         console.error('ACTION: Enable Cloud Recording in Agora Console');
-        //         console.error('   Go to: https://console.agora.io → Your Project → Cloud Recording');
-        //     }
-        // }
+            if (error.message.includes('credentials')) {
+                console.error('ACTION: Check your B2 credentials in .env file');
+            } else if (error.response?.status === 404 && error.response?.data?.message?.includes('no Route matched')) {
+                console.error('ACTION: Agora Cloud Recording credentials mismatch or not enabled');
+                console.error('   Option 1: Verify App ID matches REST API credentials in Agora Console');
+                console.error('   Option 2: Enable Cloud Recording in Agora Console: https://console.agora.io');
+                console.error('   Option 3: Run this diagnostic to verify: node scripts/validateAgoraSetup.js');
+            } else if (error.response?.status === 401 || error.response?.status === 403) {
+                console.error('ACTION 1: Enable Cloud Recording in Agora Console');
+                console.error('   Go to: https://console.agora.io → Your Project → Cloud Recording');
+                console.error('ACTION 2: Verify your Agora REST API Key and Secret in .env');
+            } else if (error.response?.data?.message?.includes('recording')) {
+                console.error('ACTION: Enable Cloud Recording in Agora Console');
+                console.error('   Go to: https://console.agora.io → Your Project → Cloud Recording');
+            }
+        }
 
+        if (recordingError) {
+            let troubleshooting = [
+                'Verify Cloud Recording is ENABLED in Agora Console: https://console.agora.io',
+                'Check your Agora REST API credentials in .env (AGORA_REST_API_KEY, AGORA_REST_API_SECRET)',
+                'Verify B2 credentials are correct in .env (BACKBLAZE_APPLICATION_KEY_ID, BACKBLAZE_APPLICATION_KEY)',
+                'Ensure B2 bucket exists and is accessible: ' + process.env.BACKBLAZE_BUCKET_NAME
+            ];
 
-        // // Recording must succeed - don't proceed if recording failed
-        // if (recordingError) {
-        //     let troubleshooting = [
-        //         'Verify Cloud Recording is ENABLED in Agora Console: https://console.agora.io',
-        //         'Check your Agora REST API credentials in .env (AGORA_REST_API_KEY, AGORA_REST_API_SECRET)',
-        //         'Verify B2 credentials are correct in .env (BACKBLAZE_APPLICATION_KEY_ID, BACKBLAZE_APPLICATION_KEY)',
-        //         'Ensure B2 bucket exists and is accessible: ' + process.env.BACKBLAZE_BUCKET_NAME
-        //     ];
-
-        //     // Add specific guidance for 404 credential mismatch
-        //     if (recordingError.response?.status === 404 && recordingError.response?.data?.message?.includes('no Route matched')) {
-        //         troubleshooting = [
-        //             'Agora Cloud Recording credential mismatch or not enabled',
-        //             '',
-        //             'FIXES TO TRY:',
-        //             '1. Verify your App ID matches REST API credentials in Agora Console',
-        //             '2. Enable Cloud Recording in your Agora project: https://console.agora.io → Features → Cloud Recording',
-        //             '3. Generate new REST API credentials for the correct project',
-        //             '4. Run diagnostic: npm run validate-agora',
-        //             '',
-        //             'See AGORA_CREDENTIALS_FIX.md for detailed instructions'
-        //         ];
-        //     }
-
-        //     return res.status(500).json({
-        //         success: false,
-        //         error: recordingError.message,
-        //         message: 'Failed to start recording. The stream cannot proceed without recording.',
-        //         troubleshooting: troubleshooting
-        //     });
-        // }
+            return res.status(500).json({
+                success: false,
+                error: recordingError.message,
+                message: 'Failed to start recording. The stream cannot proceed without recording.',
+                troubleshooting: troubleshooting
+            });
+        }
 
         podcast.streamStatus = 'live';
         if (resourceId) podcast.agoraResourceId = resourceId;
@@ -460,75 +457,37 @@ const endPodcastStream = async (req, res) => {
             return res.status(400).json({ message: 'Podcast stream is not currently live' });
         }
 
-        console.log('Podcast details:');
-        console.log('  - Has agoraResourceId:', !!podcast.agoraResourceId);
-        console.log('  - Has agoraSid:', !!podcast.agoraSid);
+        if (podcast.agoraResourceId && podcast.agoraSid) {
+            try {
+                console.log('Stopping Agora recording...');
+                const headers = getAgoraRestHeaders();
 
-        // Try to stop recording and process the file if it was started
-        // if (podcast.agoraResourceId && podcast.agoraSid) {
-        //     try {
-        //         console.log('Stopping Agora recording...');
-        //         const headers = getAgoraRestHeaders();
-
-        //         // 1. Stop the recording
-        //         await axios.post(
-        //             `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceid/${podcast.agoraResourceId}/sid/${podcast.agoraSid}/mode/mix/stop`,
-        //             {
-        //                 cname: podcast._id.toString(),
-        //                 uid: "999",
-        //                 clientRequest: {}
-        //             },
-        //             { headers }
-        //         );
-        //         console.log('Recording stopped successfully');
-
-        //         // 2. Query Agora to get the temporary download URL for the recorded file
-        //         const queryResponse = await axios.post(
-        //             `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceid/${podcast.agoraResourceId}/sid/${podcast.agoraSid}/mode/mix/query`,
-        //             {
-        //                 cname: podcast._id.toString(),
-        //                 uid: "999",
-        //                 clientRequest: {}
-        //             },
-        //             { headers }
-        //         );
-
-        //         const fileDetails = queryResponse.data.serverResponse?.fileList?.[0];
+                const stopResponse = await axios.post(
+                    `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceid/${podcast.agoraResourceId}/sid/${podcast.agoraSid}/mode/mix/stop`,
+                    {
+                        cname: podcast._id.toString(),
+                        uid: "999",
+                        clientRequest: {}
+                    },
+                    { headers }
+                );
                 
-        //         if (fileDetails && fileDetails.url) {
-        //             console.log('Downloading recording from Agora temporary storage...');
-                    
-        //             // 3. Download the file from Agora
-        //             const response = await axios.get(fileDetails.url, { 
-        //                 responseType: 'arraybuffer', 
-        //                 timeout: 60000 // 60 seconds timeout
-        //             });
-        //             const fileBuffer = Buffer.from(response.data);
-                    
-        //             // 4. Upload to Backblaze B2
-        //             const fileName = `recordings/podcast_${podcast._id}_${Date.now()}.m3u8`;
-        //             console.log('Uploading to Backblaze B2...');
-        //             await uploadToB2(fileName, fileBuffer, 'audio/mpegurl');
-                    
-        //             // 5. Save the public B2 URL to the database
-        //             podcast.recordingUrl = getB2FileUrl(fileName);
-        //             podcast.recordingUploadedAt = new Date();
-        //             console.log('Recording saved to B2 successfully:', podcast.recordingUrl);
-        //         } else {
-        //             console.warn('No download URL provided by Agora query. Recording may not have been processed.');
-        //         }
-        //     } catch (recordingError) {
-        //         console.error('Error processing Agora recording:', recordingError.message);
-        //         // We don't throw here; we still want to end the stream even if recording fails
-        //     }
-        // } else {
-        //     console.log('No recording to stop - recording may not have started properly');
-        // }
+                const fileList = stopResponse.data.serverResponse?.fileList;
+                const fileName = fileList || `${podcast.agoraSid}_${podcast._id}.m3u8`;
+                podcast.recordingUrl = getB2FileUrl(fileName);
+                podcast.recordingUploadedAt = new Date();
 
-        // Always end the stream, regardless of recording status
+            } catch (recordingError) {
+                console.warn('Agora recording already stopped or exited:', recordingError.response?.data?.reason || recordingError.message);
+                
+                const fallbackFileName = `${podcast.agoraSid}_${podcast._id}.m3u8`;
+                podcast.recordingUrl = getB2FileUrl(fallbackFileName);
+                podcast.recordingUploadedAt = new Date();
+            }
+        }
+
         podcast.streamStatus = 'ended';
         await podcast.save();
-        console.log('Podcast status updated to ended');
         
         const io = req.app.get('io');
         io.emit('globalPodcastEnded', { podcastId: podcast._id });
@@ -568,7 +527,7 @@ const joinPodcastStream = async (req, res) => {
         await anonymousSession.save();
 
         const channelName = podcast._id.toString();
-        const uid = 0;
+        const uid = Math.abs(parseInt(secureAnonymousId.split('-')[0], 16)) % 2147483647; 
         const role = RtcRole.SUBSCRIBER;
         const expirationTime = 7200;
         const currentTimestamp = Math.floor(Date.now() / 1000);
@@ -620,7 +579,7 @@ const adminJoinPodcastStream = async (req, res) => {
         await anonymousSession.save();
 
         const channelName = podcast._id.toString();
-        const uid = 0;
+        const uid = Math.abs(parseInt(secureAnonymousId.split('-')[0], 16)) % 2147483647; 
         const role = RtcRole.SUBSCRIBER;
         const expirationTime = 7200;
         const currentTimestamp = Math.floor(Date.now() / 1000);

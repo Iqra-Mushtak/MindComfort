@@ -33,4 +33,4 @@ const upload = multer({
     limits: { fileSize: 3 * 1024 * 1024 }, 
 });
 
-exports.mentorDocumentUpload = upload.single('combinedDocuments');
+exports.mentorDocumentUpload = upload.single('mentorDocument');

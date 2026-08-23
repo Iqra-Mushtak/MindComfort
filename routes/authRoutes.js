@@ -1,16 +1,18 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 
 const { createAdmin, createModerator, register, verifyRegisterOTP, submitMentorApplication, adminReviewMentor, resendOTP, login, getAllApplications, getApplicationById, forgotPassword, resendResetOTP, verifyResetOTP, resetPassword, logout } = require('../controllers/authController');
-const { mentorDocumentUpload } = require('../middleware/upload');
 const { protect, adminOnly, mentorOnly } = require('../middleware/authmiddleware');
 const { loginLimiter, otpLimiter, registerLimiter, generalRateLimiter } = require('../middleware/rateLimiter');
+const uploadMemory = multer({ storage: multer.memoryStorage() });
+const uploadToB2Middleware = uploadMemory.single('mentorDocument');
+router.post('/submit-application', protect, uploadToB2Middleware, submitMentorApplication);
 
 router.post('/setup-admin', createAdmin);
 router.post('/create-moderator', protect, adminOnly, createModerator);
 router.post('/register', registerLimiter, register);
 router.post('/verifyRegister-otp', otpLimiter, verifyRegisterOTP);
-router.post('/submit-application', protect, mentorDocumentUpload, submitMentorApplication);
 router.put('/review-application', protect, adminOnly, adminReviewMentor);
 router.post('/resend-otp', otpLimiter, resendOTP);
 router.post('/login', loginLimiter, login);
