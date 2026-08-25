@@ -8,7 +8,7 @@ const Chatroom = require('../models/Chatroom');
 const ChatMessage = require('../models/ChatMessage');
 const ClientAnonymousSession = require('../models/ClientAnonymousSession');
 const User = require('../models/User');
-const NotificationService = require('../services/notificationService');
+const NotificationService = require('../services/NotificationService');
 
 const initSocket = (server) => {
 const allowedOrigins = [
