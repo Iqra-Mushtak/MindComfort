@@ -1,6 +1,6 @@
 const Podcast = require('../models/Podcast');
 const PodcastComment = require('../models/PodcastComment');
-const NotificationService = require('../services/notificationService');
+const NotificationService = require('../Services/NotificationService');
 const User = require('../models/User');
 const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const { v4: uuidv4 } = require('uuid');

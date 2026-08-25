@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const NotificationService = require('../services/notificationService');
+const NotificationService = require('../Services/NotificationService');
 
 exports.suspendMentor = async (req, res) => {
     try {

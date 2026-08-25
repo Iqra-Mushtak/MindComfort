@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const passwordSchema = require('../utils/passwordValidator');
 const sendEmail = require('../utils/sendEmail');
 const crypto = require('crypto');
-const NotificationService = require('../services/notificationService');
+const NotificationService = require('../Services/NotificationService');
 const Subscription = require('../models/Subscription');
 
 const enforceOwnership = (req, targetId) => {

@@ -2,7 +2,7 @@ const Chatroom = require('../models/Chatroom');
 const ChatMessage = require('../models/ChatMessage');
 const ChatReports = require('../models/ChatReports');
 const User = require('../models/User');
-const NotificationService = require('../services/notificationService');
+const NotificationService = require('../Services/NotificationService');
 
 exports.getAllChatrooms = async (req, res) => {
     try {

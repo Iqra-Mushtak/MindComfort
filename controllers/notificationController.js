@@ -1,4 +1,4 @@
-const NotificationService = require('../services/notificationService');
+const NotificationService = require('../Services/NotificationService');
 const Notification = require('../models/Notifications');
 const User = require('../models/User');
 

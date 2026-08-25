@@ -1,7 +1,7 @@
 const Podcast = require('../models/Podcast');
 const PodcastComment = require('../models/PodcastComment');
 const User = require('../models/User');
-const NotificationService = require('../services/notificationService');
+const NotificationService = require('../Services/NotificationService');
 
 exports.getAllPodcasts = async (req, res) => {
     try {
