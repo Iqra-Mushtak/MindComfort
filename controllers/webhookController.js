@@ -97,7 +97,7 @@ exports.handleStripeWebhook = async (req, res) => {
     }
 };
 
-async function createSubscriptionFromPayment({ userId, planId, planType, durationMonths, referenceId, paymentId, amount }) {
+exports.createSubscriptionFromPayment = async function({ userId, planId, planType, durationMonths, referenceId, paymentId, amount }) {
     try {
         const userObjectId = new mongoose.Types.ObjectId(userId);
         const startDate = new Date();

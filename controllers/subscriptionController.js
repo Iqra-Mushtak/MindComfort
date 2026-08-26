@@ -2,7 +2,9 @@ const Subscription = require('../models/Subscription');
 const Payment = require('../models/Payment');
 const Plan = require('../models/Plan');
 const User = require('../models/User');
+const Podcast = require('../models/Podcast');
 const { createCheckoutSession } = require('../config/stripe'); 
+const { createSubscriptionFromPayment } = require('./webhookController');
 
 exports.createSubscription = async (req, res) => {
     try {
