@@ -20,7 +20,8 @@ const {
     rejectMentorApplication,
     suspendMentor,
     unsuspendMentor,
-    getMentorStats
+    getMentorStats,
+    getMentorDocumentProxy
 } = require('../controllers/adminMentorController');
 const {
     getAllChatrooms,
@@ -67,6 +68,8 @@ const {
     getModeratorStats
 } = require('../controllers/adminModeratorController');
 
+
+
 router.get('/insights', protect, adminOnly, getAdminDashboardInsights);
 
 // Clients
@@ -86,6 +89,7 @@ router.patch('/applications/:applicationId/reject', protect, adminOnly, rejectMe
 router.patch('/mentors/:mentorId/suspend', protect, adminOnly, suspendMentor);
 router.patch('/mentors/:mentorId/unsuspend', protect, adminOnly, unsuspendMentor);
 router.get('/mentors/stats/overview', protect, adminOnly, getMentorStats);
+router.get('/mentors/document-proxy', protect, adminOnly, getMentorDocumentProxy);
 
 // Chatrooms
 router.get('/chatrooms', protect, adminOnly, getAllChatrooms);

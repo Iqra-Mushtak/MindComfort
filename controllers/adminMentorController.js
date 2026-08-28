@@ -223,3 +223,44 @@ exports.getMentorStats = async (req, res) => {
         res.status(500).json({ message: 'Error fetching mentor stats', error: error.message });
     }
 };
+
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+
+const s3Client = new S3Client({
+  endpoint: process.env.B2_ENDPOINT,
+  region: process.env.B2_REGION,
+  credentials: {
+    accessKeyId: process.env.B2_APPLICATION_KEY_ID,
+    secretAccessKey: process.env.B2_APPLICATION_KEY,
+  },
+});
+
+exports.getMentorDocumentProxy = async (req, res) => {
+  try {
+    const rawKey = req.query.key;
+    if (!rawKey) {
+      return res.status(400).json({ message: "Document key is required." });
+    }
+
+    const fileKey = rawKey.includes('file/documents-uploads/')
+      ? rawKey.split('file/documents-uploads/')[1]
+      : rawKey;
+
+    const targetBucket = process.env.BACKBLAZE_DOCUMENTS_BUCKET_NAME || 'documents-uploads';
+
+    const command = new GetObjectCommand({
+      Bucket: targetBucket,
+      Key: fileKey,
+    });
+
+    const response = await s3Client.send(command);
+
+    res.setHeader('Content-Type', response.ContentType || 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline');
+
+    response.Body.pipe(res);
+  } catch (error) {
+    console.error("Document proxy error:", error);
+    res.status(500).json({ message: "Failed to stream document", error: error.message });
+  }
+};
