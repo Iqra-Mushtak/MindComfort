@@ -252,7 +252,6 @@ exports.purchaseIndividualPodcast = async (req, res) => {
         const { podcastId } = req.params;
         const userId = req.user._id;
 
-        const Podcast = require('../models/Podcast');
         const podcast = await Podcast.findById(podcastId);
         if (!podcast) return res.status(404).json({ message: 'Podcast not found' });
         if (podcast.approvalStatus !== 'approved') {
@@ -272,16 +271,17 @@ exports.purchaseIndividualPodcast = async (req, res) => {
             return res.status(400).json({ message: 'You have already purchased this podcast' });
         }
 
-         const pendingPayment = await Payment.findOne({
-            userId,
-            transactionId: new RegExp(`^POD_.*_${userId}$`),
-            status: 'pending',
-            createdAt: { $gt: new Date(Date.now() - 3600000) } // Within last hour
-        });
-        
-        if (pendingPayment) {
-            return res.status(400).json({ message: 'You already have a pending payment for a podcast. Please complete or cancel it first.' });
-        }
+        await Payment.updateMany(
+            {
+                userId,
+                referenceId: podcast._id,
+                status: 'pending'
+            },
+            {
+                status: 'failed',
+                notes: 'Expired/superseded by a new checkout attempt'
+            }
+        );
 
         const user = await User.findById(userId);
         if (!user) {
@@ -294,65 +294,43 @@ exports.purchaseIndividualPodcast = async (req, res) => {
         }
 
         if (podcastPrice === 0) {
-            try {
-                const payment = await Payment.create({
-                    planId: null,
-                    referenceId: podcast._id,
-                    userId,
-                    transactionId: `POD_FREE_${Date.now()}_${userId}`,
-                    amount: 0,
-                    currency: 'PKR',
-                    paymentMethod: 'free',
-                    status: 'completed'
-                });
-
-                const subscription = await Subscription.create({
-                    userId: userId,
-                    planId: null,
-                    type: 'podcast',
-                    referenceId: podcast._id,
-                    planName: podcast.title,
-                    planPrice: 0,
-                    planDurationMonths: 0,
-                    startDate: new Date(),
-                    endDate: null,
-                    status: 'active',
-                    paymentId: payment._id,
-                    paymentStatus: 'completed'
-                });
-                await Podcast.findByIdAndUpdate(podcastId, { 
-                    $inc: { purchaseCount: 1 } 
-                });
-
-                return res.status(201).json({
-                    message: 'Free podcast access granted',
-                    subscriptionId: subscription._id,
-                    paymentId: payment._id,
-                    isFree: true
-                });
-            } catch (error) {
-                console.error('Free podcast subscription error:', error);
-                throw error;
-            }
-        }
-
-        const amountInCents = Math.round(podcastPrice * 100);
-        if (amountInCents < 1) {
-            return res.status(400).json({ message: 'Podcast price must be at least 0.01 PKR' });
-        }
-
-        await Payment.updateMany(
-            {
-                userId,
+            const payment = await Payment.create({
                 planId: null,
-                status: 'pending',
-                notes: { $ne: 'Completed individual podcast purchase' }
-            },
-            {
-                status: 'failed',
-                notes: 'Superseded by a new podcast checkout attempt'
-            }
-        );
+                referenceId: podcast._id,
+                userId,
+                transactionId: `POD_FREE_${Date.now()}_${userId}`,
+                amount: 0,
+                currency: 'PKR',
+                paymentMethod: 'free',
+                status: 'completed'
+            });
+
+            const subscription = await Subscription.create({
+                userId: userId,
+                planId: null,
+                type: 'podcast',
+                referenceId: podcast._id,
+                planName: podcast.title,
+                planPrice: 0,
+                planDurationMonths: 0,
+                startDate: new Date(),
+                endDate: null,
+                status: 'active',
+                paymentId: payment._id,
+                paymentStatus: 'completed'
+            });
+
+            await Podcast.findByIdAndUpdate(podcastId, { 
+                $inc: { purchaseCount: 1 } 
+            });
+
+            return res.status(201).json({
+                message: 'Free podcast access granted',
+                subscriptionId: subscription._id,
+                paymentId: payment._id,
+                isFree: true
+            });
+        }
 
         const payment = await Payment.create({
             planId: null,
@@ -372,17 +350,20 @@ exports.purchaseIndividualPodcast = async (req, res) => {
                 paymentId: payment._id.toString()
             };
 
-            const paymentIntent = await createPaymentIntent(podcastPrice, metadata);
+            const session = await createCheckoutSession({
+                name: podcast.title,
+                description: `Podcast Session: ${podcast.title}`,
+                price: podcastPrice
+            }, metadata);
 
             res.status(201).json({
-                message: 'Stripe payment intent created',
+                message: 'Stripe checkout session created',
                 paymentId: payment._id,
-                clientSecret: paymentIntent.client_secret,
-                stripePaymentIntentId: paymentIntent.id
+                checkoutUrl: session.url,
+                sessionId: session.id
             });
         } catch (error) {
-            console.error('Podcast payment form creation failed:', error.message);
-            
+            console.error('Podcast checkout session creation failed:', error.message);
             await Payment.findByIdAndDelete(payment._id);
             throw error;
         }
