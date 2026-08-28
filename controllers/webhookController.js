@@ -313,7 +313,7 @@ exports.completePayment = async (req, res) => {
         if (payment.planId) {
             const plan = await Plan.findById(payment.planId);
             if (plan) {
-                await createSubscriptionFromPayment({
+                await exports.createSubscriptionFromPayment({
                     userId: payment.userId.toString(),
                     planId: payment.planId.toString(),
                     planType: plan.type,
@@ -324,7 +324,7 @@ exports.completePayment = async (req, res) => {
                 });
             }
         } else {
-            await createSubscriptionFromPayment({
+            await exports.createSubscriptionFromPayment({
                 userId: payment.userId.toString(),
                 planId: null,
                 planType: 'podcast',
