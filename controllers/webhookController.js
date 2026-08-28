@@ -282,25 +282,18 @@ exports.debugCompletePayment = async (req, res) => {
 exports.completePayment = async (req, res) => {
     try {
         const { paymentId } = req.body;
-        console.log('\ncompletePayment CALLED');
-        console.log('paymentId:', paymentId);
+        console.log('\ncompletePayment CALLED for paymentId:', paymentId);
 
         if (!paymentId) {
-            console.log('No paymentId in request');
             return res.status(400).json({ message: 'Payment ID is required' });
         }
 
         const payment = await Payment.findById(paymentId);
-        console.log('Payment found:', payment ? 'YES' : 'NO');
-        console.log('Current status:', payment?.status);
-
         if (!payment) {
-            console.log('Payment record not found in DB');
-            return res.status(404).json({ message: 'Payment not found' });
+            return res.status(404).json({ message: 'Payment record not found' });
         }
 
         if (payment.status === 'completed') {
-            console.log('ℹAlready completed, returning subscription');
             const subscription = await Subscription.findOne({ paymentId: payment._id });
             return res.status(200).json({ 
                 message: 'Payment already completed',
@@ -314,31 +307,35 @@ exports.completePayment = async (req, res) => {
             });
         }
 
-        console.log('Updating payment status to completed...');
         payment.status = 'completed';
-        const savedPayment = await payment.save();
-        console.log('Payment SAVED. New status:', savedPayment.status);
+        await payment.save();
 
-        const plan = await Plan.findById(payment.planId);
-        if (!plan) {
-            console.log('Plan not found');
-            return res.status(404).json({ message: 'Plan not found' });
+        if (payment.planId) {
+            const plan = await Plan.findById(payment.planId);
+            if (plan) {
+                await createSubscriptionFromPayment({
+                    userId: payment.userId.toString(),
+                    planId: payment.planId.toString(),
+                    planType: plan.type,
+                    durationMonths: plan.durationMonths,
+                    referenceId: payment.referenceId,
+                    paymentId: payment._id,
+                    amount: payment.amount
+                });
+            }
+        } else {
+            await createSubscriptionFromPayment({
+                userId: payment.userId.toString(),
+                planId: null,
+                planType: 'podcast',
+                durationMonths: 0,
+                referenceId: payment.referenceId,
+                paymentId: payment._id,
+                amount: payment.amount
+            });
         }
 
-        console.log('Creating subscription...');
-        await createSubscriptionFromPayment({
-            userId: payment.userId.toString(),
-            planId: payment.planId.toString(),
-            planType: plan.type,
-            durationMonths: plan.durationMonths,
-            referenceId: payment.referenceId,
-            paymentId: payment._id,
-            amount: payment.amount
-        });
-        console.log('Subscription created');
-
         const subscription = await Subscription.findOne({ paymentId: payment._id });
-        console.log('completePayment SUCCESS\n');
 
         res.status(200).json({ 
             message: 'Payment completed successfully',
@@ -352,7 +349,6 @@ exports.completePayment = async (req, res) => {
         });
     } catch (error) {
         console.error('completePayment ERROR:', error.message);
-        console.error(error.stack);
         res.status(500).json({ message: 'Error completing payment', error: error.message });
     }
 };
