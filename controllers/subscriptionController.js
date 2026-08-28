@@ -376,7 +376,6 @@ exports.purchaseIndividualPodcast = async (req, res) => {
 exports.getSessionStatus = async (req, res) => {
     try {
         const { sessionId } = req.query;
-        const userId = req.user._id;
 
         if (!sessionId) {
             return res.status(400).json({ message: 'Session ID is required' });
@@ -386,7 +385,6 @@ exports.getSessionStatus = async (req, res) => {
         const stripe = getStripeInstance();
 
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-        
 
         if (!session) {
             return res.status(404).json({ message: 'Session not found' });
@@ -421,37 +419,33 @@ exports.getSessionStatus = async (req, res) => {
 
             subscription = await Subscription.findOne({ paymentId: payment._id });
 
-            if (!subscription && payment.planId) {
-                const plan = await Plan.findById(payment.planId);
-                if (plan) {
+            if (!subscription) {
+                if (payment.planId) {
+                    const plan = await Plan.findById(payment.planId);
+                    if (plan) {
+                        await createSubscriptionFromPayment({
+                            userId: payment.userId.toString(),
+                            planId: payment.planId.toString(),
+                            planType: plan.type,
+                            durationMonths: plan.durationMonths,
+                            referenceId: payment.referenceId ? payment.referenceId.toString() : null,
+                            paymentId: payment._id,
+                            amount: payment.amount
+                        });
+                    }
+                } else if (payment.referenceId) {
                     await createSubscriptionFromPayment({
-                        userId: payment.userId,
-                        planId: payment.planId,
-                        planType: plan.type,
-                        durationMonths: plan.durationMonths,
+                        userId: payment.userId.toString(),
+                        planId: null,
+                        planType: 'podcast',
+                        durationMonths: 0,
+                        referenceId: payment.referenceId.toString(),
                         paymentId: payment._id,
                         amount: payment.amount
                     });
-                    subscription = await Subscription.findOne({ paymentId: payment._id });
                 }
-            } else if (!subscription && payment.referenceId) {
-                // Handle podcast purchase
-                const podcast = await Podcast.findById(payment.referenceId);
-                const user = await User.findById(payment.userId);
-                
-                if (podcast && user) {
-                    user.podcastAccess = user.podcastAccess || [];
-                    if (!user.podcastAccess.includes(podcast._id)) {
-                        user.podcastAccess.push(podcast._id);
-                        await user.save();
-                    }
-                    console.log('Podcast access granted to user');
-                }
-                
-                subscription = await Subscription.findOne({ 
-                    userId: payment.userId, 
-                    referenceId: payment.referenceId 
-                });
+
+                subscription = await Subscription.findOne({ paymentId: payment._id });
             }
         } else if (session.payment_status === 'unpaid') {
             paymentStatus = 'pending';
