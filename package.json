@@ -8,6 +8,7 @@
     "validate-agora": "node scripts/validateAgoraSetup.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1120.0",
     "agora-access-token": "^2.0.4",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.16.1",
