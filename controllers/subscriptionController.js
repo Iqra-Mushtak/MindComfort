@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Podcast = require('../models/Podcast');
 const { createCheckoutSession } = require('../config/stripe'); 
 const { createSubscriptionFromPayment } = require('./webhookController');
+const { createPaymentIntent, getPaymentIntent } = require('../utils/stripe');
 
 exports.createSubscription = async (req, res) => {
     try {
