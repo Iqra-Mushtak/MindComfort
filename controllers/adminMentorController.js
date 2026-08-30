@@ -9,8 +9,6 @@ exports.getAllMentors = async (req, res) => {
         let filter = { role: 'mentor' };
 
         if (search) {
-            console.log("Searching for mentors with query:", search);
-            
             if (mongoose.Types.ObjectId.isValid(search) && search.length === 24) {
                 filter.$or = [
                     { username: { $regex: search, $options: 'i' } },
@@ -41,12 +39,26 @@ exports.getAllMentors = async (req, res) => {
 
         const total = await User.countDocuments(filter);
 
+        const formattedMentors = await Promise.all(
+            mentorsList.map(async (mentorDoc) => {
+                const mentor = mentorDoc.toObject();
+                const application = await MentorApplication.findOne({ mentorId: mentor._id });
+                
+                if (!application) {
+                    mentor.status = 'not_submitted';
+                } else {
+                    mentor.status = application.status;
+                }
+                return mentor;
+            })
+        );
+
         res.status(200).json({
             total,
             page: parseInt(page),
             limit: parseInt(limit),
             pages: Math.ceil(total / limit),
-            mentors: mentorsList
+            mentors: formattedMentors
         });
     } catch (error) {
         console.error("Error in getAllMentors:", error);

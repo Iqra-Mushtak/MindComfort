@@ -19,7 +19,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
             chatrooms,
             pendingReports,
             pendingPodcasts,
-            mentorApplications,  
+            mentorApplicationsCount,  
             mentorProfiles,
             activeSubscriptions,
             expiredSubscriptions,
@@ -36,7 +36,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
             Chatroom.find({}),
             ChatReports.countDocuments({ status: 'pending' }),
             Podcast.countDocuments({ approvalStatus: 'pending' }),
-            MentorApplication.countDocuments({status: 'pending'}),
+            MentorApplication.countDocuments({ status: 'pending' }),
             MentorProfile.find({}),
             Subscription.countDocuments({ 
                 status: 'active', 
@@ -88,6 +88,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
 
         const clients = users.filter(u => u.role === 'client');
         const mentors = users.filter(u => u.role === 'mentor');
+        const approvedMentorUserIds = new Set(mentorProfiles.map(p => p.mentorId.toString()));
 
         const planStats = await Plan.aggregate([
             {
@@ -125,9 +126,9 @@ exports.getAdminDashboardInsights = async (req, res) => {
                 activeClients: clients.filter(c => !c.isSuspended).length,
                 suspendedClients: clients.filter(c => c.isSuspended).length,
                 totalMentors: mentors.length,
-                activeMentors: mentors.filter(m => !m.isSuspended).length,
+                activeMentors: mentors.filter(m => !m.isSuspended && approvedMentorUserIds.has(m._id.toString())).length,
                 suspendedMentors: mentors.filter(m => m.isSuspended).length,
-                pendingMentorApplications: mentors.filter(m => m.status === 'pending').length,
+                pendingMentorApplications: mentorApplicationsCount,
             },
             chat: {
                 totalChatrooms: chatrooms.length,
@@ -151,7 +152,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
             },
             moderation: {
                 pendingReports,
-                pendingMentorApplications: users.filter(u => u.role === 'mentor' && u.status === 'pending').length,
+                pendingMentorApplications: mentorApplicationsCount,
             },
             podcasts: {
                 pendingPodcastLists: pendingPodcasts,
@@ -174,7 +175,7 @@ exports.getAdminDashboardInsights = async (req, res) => {
                     speaker: rep.reportedBy?.username || 'Unknown User',
                     time: rep.createdAt ? new Date(rep.createdAt).toLocaleString() : 'Recently'
                 }))
-}
+            }
         };
 
         res.status(200).json({ insights });
