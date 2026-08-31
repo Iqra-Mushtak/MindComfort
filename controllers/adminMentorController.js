@@ -222,9 +222,18 @@ exports.unsuspendMentor = async (req, res) => {
 
 exports.getMentorStats = async (req, res) => {
     try {
+        const approvedMentorIds = await MentorApplication.distinct('mentorId', { status: 'approved' });
+
         const stats = {
             totalMentors: await User.countDocuments({ role: 'mentor' }),
-            activeMentors: await User.countDocuments({ role: 'mentor', isSuspended: false }),
+            activeMentors: await User.countDocuments({
+                role: 'mentor',
+                isSuspended: false,
+                $or: [
+                    { status: 'approved' },
+                    { _id: { $in: approvedMentorIds } }
+                ]
+            }),
             suspendedMentors: await User.countDocuments({ role: 'mentor', isSuspended: true }),
             pendingApplications: await MentorApplication.countDocuments({ status: 'pending' })
         };

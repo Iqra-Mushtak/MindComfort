@@ -88,7 +88,9 @@ exports.getAdminDashboardInsights = async (req, res) => {
 
         const clients = users.filter(u => u.role === 'client');
         const mentors = users.filter(u => u.role === 'mentor');
-        const approvedMentorUserIds = new Set(mentorProfiles.map(p => p.mentorId.toString()));
+        const approvedMentorUserIds = new Set(
+            (await MentorApplication.distinct('mentorId', { status: 'approved' })).map(id => id.toString())
+        );
 
         const planStats = await Plan.aggregate([
             {
@@ -126,7 +128,10 @@ exports.getAdminDashboardInsights = async (req, res) => {
                 activeClients: clients.filter(c => !c.isSuspended).length,
                 suspendedClients: clients.filter(c => c.isSuspended).length,
                 totalMentors: mentors.length,
-                activeMentors: mentors.filter(m => !m.isSuspended && approvedMentorUserIds.has(m._id.toString())).length,
+                activeMentors: mentors.filter(m => {
+                    const mentorId = m._id.toString();
+                    return !m.isSuspended && (m.status === 'approved' || approvedMentorUserIds.has(mentorId));
+                }).length,
                 suspendedMentors: mentors.filter(m => m.isSuspended).length,
                 pendingMentorApplications: mentorApplicationsCount,
             },

@@ -403,11 +403,18 @@ const startPodcastStream = async (req, res) => {
         if (recordingSid) podcast.agoraSid = recordingSid;
         await podcast.save();
 
-        const subscribedUsers = await User.find({ isSubscribed: true }).select('_id');
-        const subscriberIds = subscribedUsers.map(user => user._id);
-        if (subscriberIds.length > 0) {
+        const podcastRecipients = await User.find({
+            $or: [
+                { role: 'admin' },
+                { role: 'moderator' },
+                { role: 'client', isSubscribed: true }
+            ]
+        }).select('_id');
+
+        const recipientIds = podcastRecipients.map(user => user._id);
+        if (recipientIds.length > 0) {
             await NotificationService.sendBulkNotifications({
-                recipientIds: subscriberIds,
+                recipientIds,
                 type: 'podcast_live',
                 message: `Live now: "${podcast.title}" has started streaming. Join now!`,
                 link: `/podcasts/${podcast._id}`,
