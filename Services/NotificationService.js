@@ -2,6 +2,18 @@ const Notification = require('../models/Notifications');
 const User = require('../models/User');
 const { sendEmail } = require('../utils/sendEmail');
 
+const NOTIFICATION_RETENTION_DAYS = 30;
+
+const getRetentionCutoff = () => new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+const applyRetentionCleanup = async (userId) => {
+    const cutoff = getRetentionCutoff();
+    await Notification.deleteMany({
+        recipient: userId,
+        createdAt: { $lt: cutoff }
+    });
+};
+
 const sendNotification = async ({ recipientId, type, message, link, html, channels = ['in-app'] }) => {
     try {  
         const notification = await Notification.create({
@@ -9,7 +21,8 @@ const sendNotification = async ({ recipientId, type, message, link, html, channe
             type,
             message,
             link,
-            isRead: false
+            isRead: false,
+            expiresAt: new Date(Date.now() + NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
         });
 
         if (channels.includes('in-app') && global.io) {
@@ -44,7 +57,8 @@ const sendBulkNotifications = async ({ recipientIds, type, message, link, html, 
         type,
         message,
         link,
-        isRead: false
+        isRead: false,
+        expiresAt: new Date(Date.now() + NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
     }));
 
     const createdNotifications = await Notification.insertMany(notifications);
@@ -72,7 +86,11 @@ const sendBulkNotifications = async ({ recipientIds, type, message, link, html, 
 };
 
 const getNotifications = async (userId) => {
-    return await Notification.find({ recipient: userId }).sort({ createdAt: -1 });
+    await applyRetentionCleanup(userId);
+    return await Notification.find({
+        recipient: userId,
+        createdAt: { $gte: getRetentionCutoff() }
+    }).sort({ createdAt: -1 });
 };
 
 module.exports = { sendNotification, sendBulkNotifications, getNotifications };
