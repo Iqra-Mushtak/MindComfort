@@ -5,7 +5,11 @@ const User = require('../models/User');
 const getNotifications = async (req, res) => {
     try {
         const notifications = await NotificationService.getNotifications(req.user._id);
-        res.status(200).json({ success: true, data: notifications });
+        res.status(200).json({ 
+            success: true, 
+            data: notifications, 
+            notifications: notifications 
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
@@ -76,7 +80,7 @@ const markAsRead = async (req, res) => {
         const notification = await Notification.findOneAndUpdate(
             { _id: notificationId, recipient: req.user._id },
             { isRead: true },
-            { returnDocument: 'after' }
+            { new: true }
         );
 
         if (!notification) {

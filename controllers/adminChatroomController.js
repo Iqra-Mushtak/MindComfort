@@ -247,7 +247,7 @@ exports.suspendChatUser = async (req, res) => {
         await NotificationService.sendNotification({
             recipientId: userId,
             type: 'account_suspended',
-            message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
+            message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}.`,
             link: '/support',
             channels: ['in-app']
         });

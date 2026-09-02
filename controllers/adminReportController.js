@@ -1,6 +1,7 @@
 const ChatReports = require('../models/ChatReports');
 const ChatMessage = require('../models/ChatMessage');
 const User = require('../models/User');
+import NotificationService from '../Services/NotificationService';
 
 exports.getPendingReports = async (req, res) => {
     try {
@@ -166,6 +167,7 @@ exports.deleteReportedMessage = async (req, res) => {
 exports.warnUser = async (req, res) => {
     try {
         const { reportId } = req.params;
+        const { reason } = req.body;
 
         const report = await ChatReports.findById(reportId);
         if (!report) {
@@ -173,13 +175,24 @@ exports.warnUser = async (req, res) => {
         }
 
         const message = await ChatMessage.findById(report.messageId);
+        if (!message) {
+            return res.status(404).json({ message: 'Reported message not found' });
+        }
+
         const userId = message.senderId;
 
         const user = await User.findByIdAndUpdate(
             userId,
             { $inc: { warningCount: 1 } },
-            { returnDocument: 'after' }
+            { new: true }
         ).select('-password -otp');
+
+        await NotificationService.sendNotification({
+            recipientId: userId,
+            type: 'chat_warning',
+            message: `Warning: You have received a warning. Reason: "${req.body.reason || report.reason}". Flagged message: "${message.content}".`,
+            channels: ['in-app']
+        });
 
         const updatedReport = await ChatReports.findByIdAndUpdate(
             reportId,
@@ -188,7 +201,7 @@ exports.warnUser = async (req, res) => {
                 actionTaken: 'warnUser',
                 actionedBy: req.user._id
             },
-            { returnDocument: 'after' }
+            { new: true }
         ).populate('messageId').populate('reportedBy');
 
         res.status(200).json({ message: 'User warned and report marked as resolved', report: updatedReport, user });
@@ -200,6 +213,7 @@ exports.warnUser = async (req, res) => {
 exports.suspendReportedUser = async (req, res) => {
     try {
         const { reportId } = req.params;
+        const { reason } = req.body;
 
         const report = await ChatReports.findById(reportId);
         if (!report) {
@@ -207,13 +221,26 @@ exports.suspendReportedUser = async (req, res) => {
         }
 
         const message = await ChatMessage.findById(report.messageId);
+        if (!message) {
+            return res.status(404).json({ message: 'Reported message not found' });
+        }
+
         const userId = message.senderId;
+        const reportReason = reason || report.reason || report.otherReason || 'Severe violation of community guidelines';
+        const msgContent = message.content || '';
 
         const user = await User.findByIdAndUpdate(
             userId,
             { isSuspended: true },
-            { returnDocument: 'after' }
+            { new: true }
         ).select('-password -otp');
+
+        await NotificationService.sendNotification({
+            recipientId: userId,
+            type: 'account_suspended',
+            message: `Account Suspended: Your account has been suspended. Reason: "${req.body.reason || report.reason}". Flagged message: "${message.content}".`,
+            channels: ['in-app']
+        });
 
         const updatedReport = await ChatReports.findByIdAndUpdate(
             reportId,
@@ -222,7 +249,7 @@ exports.suspendReportedUser = async (req, res) => {
                 actionTaken: 'suspendUser',
                 actionedBy: req.user._id
             },
-            { returnDocument: 'after' }
+            { new: true }
         ).populate('messageId').populate('reportedBy');
 
         res.status(200).json({ message: 'User suspended and report marked as resolved', report: updatedReport, user });

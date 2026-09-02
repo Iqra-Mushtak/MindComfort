@@ -150,9 +150,9 @@ io.on('connection', (socket) => {
             }
             if (socket.user.role === 'mentor' && (socket.user.isSuspended || socket.user.status !== 'approved')) {
                 if (typeof callback === 'function') {
-                    return callback({ status: 'error', message: 'Your account is currently inactive or suspended. Please contact support for assistance.' });
+                    return callback({ status: 'error', message: 'Your account is currently inactive or suspended.' });
                 }
-                return socket.emit('joinError', 'Your account is currently inactive or suspended. Please contact support for assistance.');
+                return socket.emit('joinError', 'Your account is currently inactive or suspended.');
             }
             if (!isStaffRole(socket.user.role) && !chatroom.allowedRoles.includes(socket.user.role)) {
                 if (typeof callback === 'function') {
@@ -165,7 +165,6 @@ io.on('connection', (socket) => {
             let displayIdentity = "";
                 
                         if (socket.user.role === 'client') {
-                // Find ANY existing session for this user in this chatroom (active or inactive)
                 let anonymousSession = await ClientAnonymousSession.findOne({
                     userId: socket.user._id,
                     chatroomId: chatroomId,
@@ -477,7 +476,7 @@ io.on('connection', (socket) => {
             await NotificationService.sendNotification({
                 recipientId: userId,
                 type: 'account_suspended',
-                message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
+                message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}.`,
                 link: '/support',
                 channels: ['in-app']
             });
@@ -586,7 +585,7 @@ io.on('connection', (socket) => {
             await NotificationService.sendNotification({
                 recipientId: userId,
                 type: 'account_suspended',
-                message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}. Please contact support.`,
+                message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}.`,
                 link: '/support',
                 channels: ['in-app']
             });

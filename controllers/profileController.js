@@ -496,7 +496,7 @@ exports.changePassword = async (req, res) => {
         await NotificationService.sendNotification({
             recipientId: user._id,
             type: 'password_changed',
-            message: 'Your password has been changed successfully. If you did not make this change, please contact support immediately.',
+            message: 'Your password has been changed successfully.',
             link: '/profile/security',
             channels: ['in-app']
         });
