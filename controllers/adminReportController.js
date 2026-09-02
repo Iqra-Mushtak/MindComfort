@@ -1,7 +1,7 @@
 const ChatReports = require('../models/ChatReports');
 const ChatMessage = require('../models/ChatMessage');
 const User = require('../models/User');
-import NotificationService from '../Services/NotificationService';
+const NotificationService = require('../Services/NotificationService');
 
 exports.getPendingReports = async (req, res) => {
     try {
