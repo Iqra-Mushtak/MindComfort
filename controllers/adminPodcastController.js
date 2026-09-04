@@ -2,6 +2,7 @@ const Podcast = require('../models/Podcast');
 const PodcastComment = require('../models/PodcastComment');
 const User = require('../models/User');
 const NotificationService = require('../Services/NotificationService');
+const Subscription = require('../models/Subscription');
 
 exports.getAllPodcasts = async (req, res) => {
     try {
@@ -67,11 +68,23 @@ exports.getPodcastDetails = async (req, res) => {
             return res.status(404).json({ message: 'Podcast not found' });
         }
 
-        const comments = await PodcastComment.find({ podcastId })
-            .populate('user', 'username email role')
-            .sort({ createdAt: -1 });
+        const [comments, ticketsSold] = await Promise.all([
+            PodcastComment.find({ podcastId })
+                .populate('user', 'username email role')
+                .sort({ createdAt: -1 }),
+            Subscription.countDocuments({
+                referenceId: podcastId,
+                status: { $in: ['active', 'completed'] }
+            })
+        ]);
 
-        res.status(200).json({ podcast, comments });
+        const podcastData = {
+            ...podcast.toObject(),
+            ticketsSold,
+            purchaseCount: ticketsSold
+        };
+
+        res.status(200).json({ podcast: podcastData, comments });
     } catch (error) {
         res.status(500).json({ message: 'Error fetching podcast details', error: error.message });
     }

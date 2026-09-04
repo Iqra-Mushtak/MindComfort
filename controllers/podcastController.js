@@ -256,6 +256,7 @@ const startPodcastStream = async (req, res) => {
             return res.status(200).json({
                 success: true,
                 message: 'Resuming the live session.',
+                appId: process.env.AGORA_APP_ID,
                 token: RtcTokenBuilder.buildTokenWithUid(
                     process.env.AGORA_APP_ID, 
                     process.env.AGORA_APP_CERTIFICATE,
@@ -272,6 +273,7 @@ const startPodcastStream = async (req, res) => {
             return res.status(200).json({
                 success: true,
                 message: 'Stream already active with recording enabled.',
+                appId: process.env.AGORA_APP_ID,
                 token: RtcTokenBuilder.buildTokenWithUid(
                     process.env.AGORA_APP_ID, 
                     process.env.AGORA_APP_CERTIFICATE,
@@ -431,6 +433,7 @@ const startPodcastStream = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Podcast stream started successfully with recording enabled',
+            appId: process.env.AGORA_APP_ID,
             token: rtcToken,
             channelName: channelName,
             recordingDetails: {
@@ -440,6 +443,7 @@ const startPodcastStream = async (req, res) => {
             },
             data: podcast
         });
+
     } catch (error) {
         res.status(500).json({
             success: false,
@@ -552,6 +556,7 @@ const joinPodcastStream = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Connected successfully',
+            appId: process.env.AGORA_APP_ID,
             token: rtcToken,
             channelName: channelName,
             anonymousId: secureAnonymousId,
