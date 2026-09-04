@@ -610,12 +610,14 @@ const adminJoinPodcastStream = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Admin connected successfully',
+            appId: process.env.AGORA_APP_ID,
             token: rtcToken,
             channelName: channelName,
             uid: uid,
             anonymousId: secureAnonymousId,
             sessionId: anonymousSession._id,
         });
+        
     } catch (error) {
         res.status(500).json({
             success: false,
