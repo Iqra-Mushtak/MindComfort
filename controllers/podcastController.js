@@ -559,6 +559,7 @@ const joinPodcastStream = async (req, res) => {
             appId: process.env.AGORA_APP_ID,
             token: rtcToken,
             channelName: channelName,
+            uid: uid,
             anonymousId: secureAnonymousId,
             sessionId: anonymousSession._id,
         });
@@ -611,6 +612,7 @@ const adminJoinPodcastStream = async (req, res) => {
             message: 'Admin connected successfully',
             token: rtcToken,
             channelName: channelName,
+            uid: uid,
             anonymousId: secureAnonymousId,
             sessionId: anonymousSession._id,
         });
