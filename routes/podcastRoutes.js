@@ -17,7 +17,7 @@ router.get('/mentor/my', protect, mentorOnly, getMentorMyPodcasts);
 router.put('/:id/start-stream', protect, mentorOnly, startPodcastStream);
 router.put('/:id/end-stream', protect, mentorOnly, endPodcastStream);
 router.get('/:id/join-stream', protect, verifySubscription('podcast'), joinPodcastStream);
-router.get('/:id/admin/join-stream', protect, adminOnly, adminJoinPodcastStream);
+router.get('/:id/admin/join-stream', protect, adminOrModerator, adminJoinPodcastStream);
 router.post('/:id/comment', protect, podcastCommentLimiter, addPodcastComment);
 router.get('/:id/comments', protect, getPodcastComments);
 router.put('/:id/comments/:commentId/moderate', protect, adminOrModerator, moderatePodcastComment);
