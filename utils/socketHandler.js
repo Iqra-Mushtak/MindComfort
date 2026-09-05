@@ -375,9 +375,42 @@ io.on('connection', (socket) => {
         }
     });
 
+    const broadcastPodcastListenerCount = (rawPodcastId) => {
+        const idStr = rawPodcastId.toString().replace('podcast_', '');
+        const roomName = `podcast_${idStr}`;
+        const room = io.sockets.adapter.rooms.get(roomName);
+        const count = room ? room.size : 0;
+
+        io.to(roomName).to(idStr).emit('listenerCountUpdate', count);
+    };
+
     socket.on('joinPodcastRoom', (podcastId) => {
-        socket.join(`podcast_${podcastId}`);
-        console.log(`Mentor ${socket.user._id} joined podcast room: podcast_${podcastId}`);
+        if (!podcastId) return;
+        const idStr = podcastId.toString().replace('podcast_', '');
+
+        socket.join(idStr);
+        socket.join(`podcast_${idStr}`);
+
+        if (['mentor', 'admin', 'moderator'].includes(socket.user.role)) {
+            socket.join(`podcast_${idStr}_staff`);
+        }
+
+        if (!socket.podcastRooms) socket.podcastRooms = new Set();
+        socket.podcastRooms.add(`podcast_${idStr}`);
+
+        broadcastPodcastListenerCount(idStr);
+    });
+
+    socket.on('leavePodcastRoom', (podcastId) => {
+        if (!podcastId) return;
+        const idStr = podcastId.toString().replace('podcast_', '');
+        socket.leave(idStr);
+        socket.leave(`podcast_${idStr}`);
+        socket.leave(`podcast_${idStr}_staff`);
+        if (socket.podcastRooms) {
+            socket.podcastRooms.delete(`podcast_${idStr}`);
+        }
+        broadcastPodcastListenerCount(idStr);
     });
 
     socket.on('adminDeleteMessage', async (payload) => {
@@ -601,6 +634,12 @@ io.on('connection', (socket) => {
         }
     });
     socket.on('disconnect', async () => {
+        if (socket.podcastRooms) {
+            for (const room of socket.podcastRooms) {
+                broadcastPodcastListenerCount(room);
+            }
+        }
+
         const sessionRaw = await redisClient.get(`socket:session:${socket.id}`);
         if (sessionRaw) {
             const session = JSON.parse(sessionRaw);

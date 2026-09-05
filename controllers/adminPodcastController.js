@@ -3,6 +3,7 @@ const PodcastComment = require('../models/PodcastComment');
 const User = require('../models/User');
 const NotificationService = require('../Services/NotificationService');
 const Subscription = require('../models/Subscription');
+const mongoose = require('mongoose');
 
 exports.getAllPodcasts = async (req, res) => {
     try {
@@ -39,11 +40,31 @@ exports.getAllPodcasts = async (req, res) => {
         }
 
         const skip = (page - 1) * limit;
-        const podcasts = await Podcast.find(filter)
+        const rawPodcasts = await Podcast.find(filter)
             .populate('speaker', 'username fullName email')
             .sort({ startTime: -1 })
             .skip(skip)
             .limit(parseInt(limit));
+
+        const podcasts = await Promise.all(rawPodcasts.map(async (pod) => {
+            const podObj = pod.toObject();
+            const podId = pod._id;
+            
+            const tickets = await Subscription.countDocuments({
+                $or: [
+                    { referenceId: podId },
+                    { referenceId: podId.toString() }
+                ],
+                status: { $in: ['active', 'completed'] }
+            });
+
+            return {
+                ...podObj,
+                purchaseCount: tickets || pod.purchaseCount || 0,
+                ticketsSold: tickets || pod.purchaseCount || 0,
+                attendees: pod.listenCount || 0
+            };
+        }));
 
         const total = await Podcast.countDocuments(filter);
 
@@ -68,20 +89,38 @@ exports.getPodcastDetails = async (req, res) => {
             return res.status(404).json({ message: 'Podcast not found' });
         }
 
-        const [comments, ticketsSold] = await Promise.all([
+        const pId = mongoose.Types.ObjectId.isValid(podcastId) ? new mongoose.Types.ObjectId(podcastId) : podcastId;
+e
+        const io = req.app.get('io');
+        let liveViewers = 0;
+        if (io && podcast.streamStatus === 'live') {
+            const room = io.sockets.adapter.rooms.get(`podcast_${podcastId}`) || io.sockets.adapter.rooms.get(podcastId.toString());
+            liveViewers = room ? room.size : 0;
+        }
+
+        const [comments, ticketsCount] = await Promise.all([
             PodcastComment.find({ podcastId })
                 .populate('user', 'username email role')
                 .sort({ createdAt: -1 }),
             Subscription.countDocuments({
-                referenceId: podcastId,
+                $or: [
+                    { referenceId: pId },
+                    { referenceId: podcastId.toString() }
+                ],
                 status: { $in: ['active', 'completed'] }
             })
         ]);
 
+        const totalSold = ticketsCount || podcast.purchaseCount || 0;
+        const attendeesCount = podcast.listenCount || 0;
+
         const podcastData = {
             ...podcast.toObject(),
-            ticketsSold,
-            purchaseCount: ticketsSold
+            ticketsSold: totalSold,
+            purchaseCount: totalSold,
+            attendees: attendeesCount,
+            listenCount: attendeesCount,
+            currentViewers: podcast.streamStatus === 'live' ? Math.max(liveViewers, attendeesCount) : 0
         };
 
         res.status(200).json({ podcast: podcastData, comments });

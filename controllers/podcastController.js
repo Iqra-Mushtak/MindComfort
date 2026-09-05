@@ -525,6 +525,7 @@ const joinPodcastStream = async (req, res) => {
             return res.status(404).json({message: 'Podcast session not found.'});
         }
         if (podcast.streamStatus !== 'live'){
+            await Podcast.findByIdAndUpdate(podcast._id, { $inc: { listenCount: 1 } });
             return res.status(400).json({message: 'This podcast session is not currently live.'});
         }
 
@@ -718,13 +719,16 @@ const addPodcastComment = async (req, res) => {
         });
 
         const io = req.app.get('io');
-        io.to(`podcast_${req.params.id}`).emit('newComment', {
+        const commentData = {
             _id: comment._id,
             podcastId: comment.podcastId,
             anonymousId: comment.anonymousId,
             content: comment.content,
             createdAt: comment.createdAt,
-        });
+        };
+
+        io.to(`podcast_${req.params.id}_staff`).emit('newComment', commentData);
+
         await NotificationService.sendNotification({
             recipientId: podcast.speaker,
             type: 'podcast_comment_received',
