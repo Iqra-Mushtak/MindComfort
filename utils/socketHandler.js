@@ -50,6 +50,7 @@ const io = new Server(server, {
         credentials: true
     }
 });
+global.io = io;
 
 const isStaffRole = (role) => ['admin', 'moderator'].includes(role);
 

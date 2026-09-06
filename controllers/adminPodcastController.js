@@ -143,6 +143,17 @@ exports.approvePodcast = async (req, res) => {
             return res.status(404).json({ message: 'Podcast not found' });
         }
 
+        const mentorId = podcast.speaker?._id || podcast.speaker;
+        if (mentorId) {
+            await NotificationService.sendNotification({
+                recipientId: mentorId,
+                type: 'podcast_approved',
+                message: `Congratulations! Your podcast "${podcast.title}" has been approved.`,
+                link: `/mentor/podcasts`,
+                channels: ['in-app', 'email']
+            });
+        }
+
         res.status(200).json({ message: 'Podcast approved successfully', podcast });
     } catch (error) {
         res.status(500).json({ message: 'Error approving podcast', error: error.message });
@@ -162,6 +173,17 @@ exports.rejectPodcast = async (req, res) => {
 
         if (!podcast) {
             return res.status(404).json({ message: 'Podcast not found' });
+        }
+
+        const mentorId = podcast.speaker?._id || podcast.speaker;
+        if (mentorId) {
+            await NotificationService.sendNotification({
+                recipientId: mentorId,
+                type: 'podcast_rejected',
+                message: `Your podcast "${podcast.title}" was not approved.${reason ? ` Reason: ${reason}` : ''}`,
+                link: `/mentor/podcasts`,
+                channels: ['in-app', 'email']
+            });
         }
 
         res.status(200).json({ message: 'Podcast rejected successfully', podcast });
