@@ -141,19 +141,31 @@ const updatePodcastApproval = async (req, res) => {
         await podcast.save();
 
         const isApproved = approvalStatus === 'approved';
-        
+
         await NotificationService.sendNotification({
             recipientId: podcast.speaker,
             type: isApproved ? 'podcast_approved' : 'podcast_rejected',
             message: isApproved 
                 ? `Great news! Your podcast "${podcast.title}" has been approved.` 
                 : `We're sorry, but your podcast "${podcast.title}" was rejected.`,
-            link: `/podcasts/${podcast._id}`,
+            link: '/mentor/podcasts',
             html: isApproved 
-                ? `<h1>Podcast Approved</h1><p>Your podcast <strong>${podcast.title}</strong> is ready to go live.</p>`
-                : `<h1>Podcast Update</h1><p>Your podcast <strong>${podcast.title}</strong> could not be approved at this time. You can try again.</p>`,
+                ? `<h1>Podcast Approved</h1><p>Your podcast <strong>${podcast.title}</strong> is approved and ready to broadcast.</p>`
+                : `<h1>Podcast Update</h1><p>Your podcast <strong>${podcast.title}</strong> was not approved at this time.</p>`,
             channels: ['in-app', 'email']
         });
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user_${podcast.speaker}`).emit('notification', {
+                type: isApproved ? 'podcast_approved' : 'podcast_rejected',
+                message: isApproved 
+                    ? `Great news! Your podcast "${podcast.title}" has been approved.` 
+                    : `We're sorry, but your podcast "${podcast.title}" was rejected.`,
+                link: '/mentor/podcasts',
+                createdAt: new Date()
+            });
+        }
 
         res.status(200).json({
             success: true,
@@ -490,7 +502,6 @@ const endPodcastStream = async (req, res) => {
 
             } catch (recordingError) {
                 console.warn('Agora recording already stopped or exited:', recordingError.response?.data?.reason || recordingError.message);
-                
                 const fallbackFileName = `${podcast.agoraSid}_${podcast._id}.m3u8`;
                 podcast.recordingUrl = getB2FileUrl(fallbackFileName);
                 podcast.recordingUploadedAt = new Date();
@@ -501,7 +512,16 @@ const endPodcastStream = async (req, res) => {
         await podcast.save();
         
         const io = req.app.get('io');
-        io.emit('globalPodcastEnded', { podcastId: podcast._id });
+        if (io) {
+            const endPayload = { 
+                podcastId: podcast._id.toString(), 
+                message: 'This live podcast session has ended.' 
+            };
+            io.emit('globalPodcastEnded', { podcastId: podcast._id });
+            io.to(`podcast_${podcast._id}`).emit('podcastEnded', endPayload);
+            io.to(`podcast_${podcast._id}_staff`).emit('podcastEnded', endPayload);
+            io.to(podcast._id.toString()).emit('podcastEnded', endPayload);
+        }
         
         res.status(200).json({
             success: true,
@@ -725,17 +745,12 @@ const addPodcastComment = async (req, res) => {
             anonymousId: comment.anonymousId,
             content: comment.content,
             createdAt: comment.createdAt,
+            user: { _id: req.user._id, username: req.user.username }
         };
 
-        io.to(`podcast_${req.params.id}_staff`).emit('newComment', commentData);
-
-        await NotificationService.sendNotification({
-            recipientId: podcast.speaker,
-            type: 'podcast_comment_received',
-            message: `New comment on your podcast "${podcast.title}": "${content.trim().substring(0, 50)}${content.trim().length > 50 ? '...' : ''}"`,
-            link: `/podcasts/${req.params.id}`,
-            channels: ['in-app']
-        });
+        if (io) {
+            io.to(`podcast_${req.params.id}_staff`).emit('newComment', commentData);
+        }
 
         res.status(201).json({
             success: true,

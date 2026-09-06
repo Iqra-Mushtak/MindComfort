@@ -381,7 +381,7 @@ io.on('connection', (socket) => {
         const room = io.sockets.adapter.rooms.get(roomName);
         const count = room ? room.size : 0;
 
-        io.to(roomName).to(idStr).emit('listenerCountUpdate', count);
+        io.to(roomName).to(idStr).to(`${roomName}_staff`).emit('listenerCountUpdate', count);
     };
 
     socket.on('joinPodcastRoom', (podcastId) => {
@@ -396,7 +396,7 @@ io.on('connection', (socket) => {
         }
 
         if (!socket.podcastRooms) socket.podcastRooms = new Set();
-        socket.podcastRooms.add(`podcast_${idStr}`);
+        socket.podcastRooms.add(idStr);
 
         broadcastPodcastListenerCount(idStr);
     });
@@ -408,9 +408,21 @@ io.on('connection', (socket) => {
         socket.leave(`podcast_${idStr}`);
         socket.leave(`podcast_${idStr}_staff`);
         if (socket.podcastRooms) {
-            socket.podcastRooms.delete(`podcast_${idStr}`);
+            socket.podcastRooms.delete(idStr);
         }
         broadcastPodcastListenerCount(idStr);
+    });
+
+    socket.on('endPodcastStream', (podcastId) => {
+        if (!podcastId) return;
+        const idStr = podcastId.toString().replace('podcast_', '');
+        const endPayload = {
+            podcastId: idStr,
+            message: 'This live podcast session has ended.'
+        };
+
+        io.to(`podcast_${idStr}`).to(idStr).to(`podcast_${idStr}_staff`).emit('podcastEnded', endPayload);
+        io.emit('globalPodcastEnded', { podcastId: idStr });
     });
 
     socket.on('adminDeleteMessage', async (payload) => {
@@ -633,12 +645,17 @@ io.on('connection', (socket) => {
             socket.emit('podcastModerationError', error.message);
         }
     });
-    socket.on('disconnect', async () => {
+    socket.on('disconnecting', () => {
         if (socket.podcastRooms) {
-            for (const room of socket.podcastRooms) {
-                broadcastPodcastListenerCount(room);
+            for (const roomId of socket.podcastRooms) {
+                setTimeout(() => {
+                    broadcastPodcastListenerCount(roomId);
+                }, 50);
             }
         }
+    });
+
+    socket.on('disconnect', async () => {
 
         const sessionRaw = await redisClient.get(`socket:session:${socket.id}`);
         if (sessionRaw) {
