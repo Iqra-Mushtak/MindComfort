@@ -35,7 +35,7 @@ exports.getPendingReports = async (req, res) => {
             .populate('reportedBy', 'username email')
             .populate({
                 path: 'messageId',
-                select: 'content text senderId',
+                select: 'content text senderId chatroomId',
                 populate: {
                     path: 'senderId',
                     select: 'username email'

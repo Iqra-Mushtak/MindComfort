@@ -539,14 +539,25 @@ const endPodcastStream = async (req, res) => {
 };
 
 const joinPodcastStream = async (req, res) => {
-    try{
+    try {
         const podcast = await Podcast.findById(req.params.id);
-        if (!podcast){
-            return res.status(404).json({message: 'Podcast session not found.'});
+        if (!podcast) {
+            return res.status(404).json({ message: 'Podcast session not found.' });
         }
-        if (podcast.streamStatus !== 'live'){
-            await Podcast.findByIdAndUpdate(podcast._id, { $inc: { listenCount: 1 } });
-            return res.status(400).json({message: 'This podcast session is not currently live.'});
+        if (podcast.streamStatus !== 'live') {
+            return res.status(400).json({ message: 'This podcast session is not currently live.' });
+        }
+
+        const previousSession = await ClientAnonymousSession.findOne({
+            userId: req.user._id,
+            chatroomId: podcast._id,
+            onModel: 'Podcast'
+        });
+
+        if (!previousSession) {
+            await Podcast.findByIdAndUpdate(podcast._id, { 
+                $inc: { listenCount: 1 } 
+            });
         }
 
         const secureAnonymousId = uuidv4();
@@ -556,7 +567,6 @@ const joinPodcastStream = async (req, res) => {
             onModel: 'Podcast',
             anonymousId: secureAnonymousId,
         });
-        await anonymousSession.save();
 
         const channelName = podcast._id.toString();
         const uid = Math.abs(parseInt(secureAnonymousId.split('-')[0], 16)) % 2147483647; 
@@ -585,6 +595,7 @@ const joinPodcastStream = async (req, res) => {
             sessionId: anonymousSession._id,
         });
     } catch (error) {
+        console.error('Error joining stream:', error);
         res.status(500).json({
             success: false,
             error: error.message,

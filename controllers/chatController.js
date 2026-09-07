@@ -167,7 +167,7 @@ exports.reportMessage = async (req, res) => {
                 recipientIds: recipientIds,
                 type: 'message_reported',
                 message: `New message report: "${reason ? reason.trim() : 'No reason provided'}"`,
-                link: `/admin/reports/${report._id}`,
+                link: `/chatroom/${message.chatroomId}?message=${message._id}`,
                 channels: ['in-app']
             });
         }
