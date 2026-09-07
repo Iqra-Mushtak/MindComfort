@@ -90,7 +90,6 @@ exports.getPodcastDetails = async (req, res) => {
         }
 
         const pId = mongoose.Types.ObjectId.isValid(podcastId) ? new mongoose.Types.ObjectId(podcastId) : podcastId;
-e
         const io = req.app.get('io');
         let liveViewers = 0;
         if (io && podcast.streamStatus === 'live') {
@@ -162,33 +161,57 @@ exports.approvePodcast = async (req, res) => {
 
 exports.rejectPodcast = async (req, res) => {
     try {
-        const { podcastId } = req.params;
         const { reason } = req.body;
-
-        const podcast = await Podcast.findByIdAndUpdate(
-            podcastId,
-            { approvalStatus: 'rejected' },
-            { returnDocument: 'after' }
-        ).populate('speaker', 'username fullName email');
+        const podcast = await Podcast.findById(req.params.id);
 
         if (!podcast) {
             return res.status(404).json({ message: 'Podcast not found' });
         }
 
-        const mentorId = podcast.speaker?._id || podcast.speaker;
-        if (mentorId) {
-            await NotificationService.sendNotification({
-                recipientId: mentorId,
-                type: 'podcast_rejected',
-                message: `Your podcast "${podcast.title}" was not approved.${reason ? ` Reason: ${reason}` : ''}`,
-                link: `/mentor/podcasts`,
-                channels: ['in-app', 'email']
-            });
+        podcast.approvalStatus = 'rejected';
+        if (podcast.schema.paths.rejectionReason) {
+            podcast.rejectionReason = reason || 'No reason provided';
+        }
+        await podcast.save();
+
+        try {
+            const mentor = await User.findById(podcast.speaker);
+            if (mentor) {
+                const notifMessage = `Your podcast "${podcast.title}" was not approved. Reason: ${reason || 'No reason provided'}`;
+                await NotificationService.sendNotification({
+                    recipientId: mentor._id,
+                    type: 'podcast_rejected',
+                    message: notifMessage,
+                    link: '/mentor/podcasts',
+                    channels: ['in-app']
+                });
+
+                const ioInstance = global.io || req.app?.get('io');
+                if (ioInstance) {
+                    ioInstance.to(`user_${mentor._id}`).emit('notification', {
+                        type: 'podcast_rejected',
+                        message: notifMessage,
+                        link: '/mentor/podcasts',
+                        createdAt: new Date()
+                    });
+                }
+            }
+        } catch (notifErr) {
+            console.error('Notification dispatch warning in rejectPodcast:', notifErr.message);
         }
 
-        res.status(200).json({ message: 'Podcast rejected successfully', podcast });
+        return res.status(200).json({
+            success: true,
+            message: 'Podcast rejected successfully',
+            data: podcast
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Error rejecting podcast', error: error.message });
+        console.error('Error rejecting podcast:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to reject podcast'
+        });
     }
 };
 
