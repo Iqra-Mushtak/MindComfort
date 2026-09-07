@@ -193,11 +193,17 @@ exports.deleteMessage = async (req, res) => {
 exports.warnChatUser = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { messageId, reason } = req.body;
+        const { messageId, reason, content } = req.body;
 
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+
+        let flaggedText = content || '';
+        if (!flaggedText && messageId) {
+            const chatMsg = await ChatMessage.findById(messageId);
+            if (chatMsg) flaggedText = chatMsg.content || chatMsg.text || '';
         }
 
         if (!user.warnings) {
@@ -206,10 +212,14 @@ exports.warnChatUser = async (req, res) => {
         user.warnings += 1;
         await user.save();
 
+        const notifMsg = flaggedText 
+            ? `Warning: You have received a warning for chat conduct. Reason: "${reason || 'Violation of community guidelines'}". Flagged message: "${flaggedText}".`
+            : `Warning: You have received a warning for chat conduct. Reason: "${reason || 'Violation of community guidelines'}".`;
+
         await NotificationService.sendNotification({
             recipientId: userId,
             type: 'chat_warning',
-            message: `You have received a warning for chat conduct. Reason: ${reason || 'Violation of community guidelines'}`,
+            message: notifMsg,
             link: '/dashboard',
             channels: ['in-app']
         });
@@ -226,11 +236,17 @@ exports.warnChatUser = async (req, res) => {
 exports.suspendChatUser = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { messageId, reason } = req.body;
+        const { messageId, reason, content } = req.body;
 
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+
+        let flaggedText = content || '';
+        if (!flaggedText && messageId) {
+            const chatMsg = await ChatMessage.findById(messageId);
+            if (chatMsg) flaggedText = chatMsg.content || chatMsg.text || '';
         }
 
         user.isSuspended = true;
@@ -244,10 +260,14 @@ exports.suspendChatUser = async (req, res) => {
         });
         await user.save();
 
+        const notifMsg = flaggedText
+            ? `Account Suspended: Your account has been suspended. Reason: "${reason || 'Violation of community guidelines'}". Flagged message: "${flaggedText}".`
+            : `Account Suspended: Your account has been suspended. Reason: "${reason || 'Violation of community guidelines'}".`;
+
         await NotificationService.sendNotification({
             recipientId: userId,
             type: 'account_suspended',
-            message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}.`,
+            message: notifMsg,
             link: '/support',
             channels: ['in-app']
         });

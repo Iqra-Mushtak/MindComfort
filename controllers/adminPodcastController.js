@@ -162,7 +162,8 @@ exports.approvePodcast = async (req, res) => {
 exports.rejectPodcast = async (req, res) => {
     try {
         const { reason } = req.body;
-        const podcast = await Podcast.findById(req.params.id);
+        const targetId = req.params.podcastId || req.params.id;
+        const podcast = await Podcast.findById(targetId);
 
         if (!podcast) {
             return res.status(404).json({ message: 'Podcast not found' });
@@ -336,11 +337,17 @@ exports.deletePodcastComment = async (req, res) => {
 exports.warnPodcastUser = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { reason } = req.body;
+        const { reason, commentId, content } = req.body;
 
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+
+        let flaggedComment = content || '';
+        if (!flaggedComment && commentId) {
+            const commentDoc = await PodcastComment.findById(commentId);
+            if (commentDoc) flaggedComment = commentDoc.content || '';
         }
 
         if (!user.warnings) {
@@ -349,10 +356,14 @@ exports.warnPodcastUser = async (req, res) => {
         user.warnings += 1;
         await user.save();
 
+        const notifMsg = flaggedComment
+            ? `Warning: You have received a warning for podcast comment conduct. Reason: "${reason || 'Violation of community guidelines'}". Flagged comment: "${flaggedComment}".`
+            : `Warning: You have received a warning for podcast comment conduct. Reason: "${reason || 'Violation of community guidelines'}".`;
+
         await NotificationService.sendNotification({
             recipientId: userId,
             type: 'podcast_warning',
-            message: `You have received a warning for podcast comment conduct. Reason: ${reason || 'Violation of community guidelines'}`,
+            message: notifMsg,
             link: '/dashboard',
             channels: ['in-app']
         });
@@ -369,11 +380,17 @@ exports.warnPodcastUser = async (req, res) => {
 exports.suspendPodcastCommentUser = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { reason } = req.body;
+        const { reason, commentId, content } = req.body;
 
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+
+        let flaggedComment = content || '';
+        if (!flaggedComment && commentId) {
+            const commentDoc = await PodcastComment.findById(commentId);
+            if (commentDoc) flaggedComment = commentDoc.content || '';
         }
 
         user.isSuspended = true;
@@ -387,10 +404,14 @@ exports.suspendPodcastCommentUser = async (req, res) => {
         });
         await user.save();
 
+        const notifMsg = flaggedComment
+            ? `Account Suspended: Your account has been suspended. Reason: "${reason || 'Violation of podcast guidelines'}". Flagged comment: "${flaggedComment}".`
+            : `Account Suspended: Your account has been suspended. Reason: "${reason || 'Violation of podcast guidelines'}".`;
+
         await NotificationService.sendNotification({
             recipientId: userId,
             type: 'account_suspended',
-            message: `Your account has been suspended for: ${reason || 'Violation of community guidelines'}.`,
+            message: notifMsg,
             link: '/support',
             channels: ['in-app']
         });

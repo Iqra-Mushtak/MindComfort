@@ -223,10 +223,11 @@ exports.reviewReports = async (req, res) => {
             if (offender) {
                 offender.isSuspended = true;
                 await offender.save();
+                const msgContent = report.messageId.content || report.messageId.text || '';
                 await NotificationService.sendNotification({
                     recipientId: offender._id,
                     type: 'user_suspended',
-                    message: `Your account has been suspended after a reported message violation.${report.notes ? ` Reason: ${report.notes}` : ''}`,
+                    message: `Account Suspended: Your account has been suspended. Reason: "${notes || report.reason || 'Violation of community guidelines'}". Flagged message: "${msgContent}".`,
                     link: '/support',
                     channels: ['in-app']
                 });
@@ -236,10 +237,11 @@ exports.reviewReports = async (req, res) => {
             if (offender) {
                 offender.warningCount = (offender.warningCount || 0) + 1;
                 await offender.save();
+                const msgContent = report.messageId.content || report.messageId.text || '';
                 await NotificationService.sendNotification({
                     recipientId: offender._id,
                     type: 'user_warned',
-                    message: `A message you sent was reviewed and a warning was issued.${report.notes ? ` Note: ${report.notes}` : ''}`,
+                    message: `Warning: You have received a warning. Reason: "${notes || report.reason || 'Violation of community guidelines'}". Flagged message: "${msgContent}".`,
                     link: `/chatrooms/${report.messageId.chatroomId || ''}`,
                     channels: ['in-app']
                 });
