@@ -336,91 +336,134 @@ exports.deletePodcastComment = async (req, res) => {
 
 exports.warnPodcastUser = async (req, res) => {
     try {
-        const { userId } = req.params;
-        const { reason, commentId, content } = req.body;
+        const targetUserId = req.params.userId?._id || req.params.userId;
+        const reason = req.body?.reason;
+        const commentId = req.body?.commentId;
+        let commentText = req.body?.content || '';
 
-        const user = await User.findById(userId);
+        const user = await User.findById(targetUserId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let flaggedComment = content || '';
-        if (!flaggedComment && commentId) {
+        if (!commentText && commentId) {
             const commentDoc = await PodcastComment.findById(commentId);
-            if (commentDoc) flaggedComment = commentDoc.content || '';
+            if (commentDoc) {
+                commentText = commentDoc.content || '';
+            }
         }
 
         if (!user.warnings) {
             user.warnings = 0;
         }
         user.warnings += 1;
+        if (!user.warningCount) {
+            user.warningCount = 0;
+        }
+        user.warningCount += 1;
         await user.save();
 
-        const notifMsg = flaggedComment
-            ? `Warning: You have received a warning for podcast comment conduct. Reason: "${reason || 'Violation of community guidelines'}". Flagged comment: "${flaggedComment}".`
-            : `Warning: You have received a warning for podcast comment conduct. Reason: "${reason || 'Violation of community guidelines'}".`;
+        const warnReason = reason || 'Violation of community guidelines';
+        const notifMsg = commentText
+            ? `Warning: You have received a warning for podcast comment conduct. Reason: "${warnReason}". Flagged comment: "${commentText}".`
+            : `Warning: You have received a warning for podcast comment conduct. Reason: "${warnReason}".`;
 
-        await NotificationService.sendNotification({
-            recipientId: userId,
-            type: 'podcast_warning',
-            message: notifMsg,
-            link: '/dashboard',
-            channels: ['in-app']
-        });
+        try {
+            await NotificationService.sendNotification({
+                recipientId: targetUserId,
+                type: 'podcast_warning',
+                message: notifMsg,
+                link: '/dashboard',
+                channels: ['in-app']
+            });
 
-        res.status(200).json({ 
+            const ioInstance = global.io || req.app?.get('io');
+            if (ioInstance) {
+                ioInstance.to(`user_${targetUserId}`).emit('notification', {
+                    type: 'podcast_warning',
+                    message: notifMsg,
+                    createdAt: new Date()
+                });
+            }
+        } catch (notifErr) {
+            console.error('Notification dispatch warning in warnPodcastUser:', notifErr.message);
+        }
+
+        return res.status(200).json({ 
+            success: true,
             message: `User warned successfully. Total warnings: ${user.warnings}`,
             user 
         });
     } catch (error) {
-        res.status(500).json({ message: 'Error warning user', error: error.message });
+        console.error('Error in warnPodcastUser:', error);
+        return res.status(500).json({ message: 'Error warning user', error: error.message });
     }
 };
 
 exports.suspendPodcastCommentUser = async (req, res) => {
     try {
-        const { userId } = req.params;
-        const { reason, commentId, content } = req.body;
+        const targetUserId = req.params.userId?._id || req.params.userId;
+        const reason = req.body?.reason;
+        const commentId = req.body?.commentId;
+        let commentText = req.body?.content || '';
 
-        const user = await User.findById(userId);
+        const user = await User.findById(targetUserId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let flaggedComment = content || '';
-        if (!flaggedComment && commentId) {
+        if (!commentText && commentId) {
             const commentDoc = await PodcastComment.findById(commentId);
-            if (commentDoc) flaggedComment = commentDoc.content || '';
+            if (commentDoc) {
+                commentText = commentDoc.content || '';
+            }
         }
+
+        const suspendReason = reason || 'Violation of podcast guidelines';
 
         user.isSuspended = true;
         if (!user.suspensionReasons) {
             user.suspensionReasons = [];
         }
         user.suspensionReasons.push({
-            reason: reason || 'Violation of podcast guidelines',
+            reason: suspendReason,
             suspendedBy: req.user._id,
             date: new Date()
         });
         await user.save();
 
-        const notifMsg = flaggedComment
-            ? `Account Suspended: Your account has been suspended. Reason: "${reason || 'Violation of podcast guidelines'}". Flagged comment: "${flaggedComment}".`
-            : `Account Suspended: Your account has been suspended. Reason: "${reason || 'Violation of podcast guidelines'}".`;
+        const notifMsg = commentText
+            ? `Account Suspended: Your account has been suspended. Reason: "${suspendReason}". Flagged comment: "${commentText}".`
+            : `Account Suspended: Your account has been suspended. Reason: "${suspendReason}".`;
 
-        await NotificationService.sendNotification({
-            recipientId: userId,
-            type: 'account_suspended',
-            message: notifMsg,
-            link: '/support',
-            channels: ['in-app']
-        });
+        try {
+            await NotificationService.sendNotification({
+                recipientId: targetUserId,
+                type: 'account_suspended',
+                message: notifMsg,
+                link: '/support',
+                channels: ['in-app']
+            });
 
-        res.status(200).json({ 
+            const ioInstance = global.io || req.app?.get('io');
+            if (ioInstance) {
+                ioInstance.to(`user_${targetUserId}`).emit('notification', {
+                    type: 'account_suspended',
+                    message: notifMsg,
+                    createdAt: new Date()
+                });
+            }
+        } catch (notifErr) {
+            console.error('Notification dispatch warning in suspendPodcastCommentUser:', notifErr.message);
+        }
+
+        return res.status(200).json({ 
+            success: true,
             message: 'User suspended successfully',
             user 
         });
     } catch (error) {
-        res.status(500).json({ message: 'Error suspending user', error: error.message });
+        console.error('Error in suspendPodcastCommentUser:', error);
+        return res.status(500).json({ message: 'Error suspending user', error: error.message });
     }
 };

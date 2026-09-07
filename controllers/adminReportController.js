@@ -167,7 +167,7 @@ exports.deleteReportedMessage = async (req, res) => {
 exports.warnUser = async (req, res) => {
     try {
         const { reportId } = req.params;
-        const { reason } = req.body;
+        const reason = req.body?.reason;
 
         const report = await ChatReports.findById(reportId);
         if (!report) {
@@ -179,20 +179,40 @@ exports.warnUser = async (req, res) => {
             return res.status(404).json({ message: 'Reported message not found' });
         }
 
-        const userId = message.senderId;
+        const targetUserId = message.senderId?._id || message.senderId;
+        if (!targetUserId) {
+            return res.status(400).json({ message: 'Sender of the reported message not found' });
+        }
 
         const user = await User.findByIdAndUpdate(
-            userId,
-            { $inc: { warningCount: 1 } },
+            targetUserId,
+            { $inc: { warningCount: 1, warnings: 1 } },
             { new: true }
         ).select('-password -otp');
 
-        await NotificationService.sendNotification({
-            recipientId: userId,
-            type: 'chat_warning',
-            message: `Warning: You have received a warning. Reason: "${req.body.reason || report.reason}". Flagged message: "${message.content}".`,
-            channels: ['in-app']
-        });
+        const flaggedText = message.content || message.text || report.content || 'Reported message';
+        const warningReason = reason || report.reason || report.otherReason || 'Violation of community guidelines';
+
+        try {
+            await NotificationService.sendNotification({
+                recipientId: targetUserId,
+                type: 'chat_warning',
+                message: `Warning: You have received a warning. Reason: "${warningReason}". Flagged message: "${flaggedText}".`,
+                link: '/dashboard',
+                channels: ['in-app']
+            });
+
+            const ioInstance = global.io || req.app?.get('io');
+            if (ioInstance) {
+                ioInstance.to(`user_${targetUserId}`).emit('notification', {
+                    type: 'chat_warning',
+                    message: `Warning: You have received a warning. Reason: "${warningReason}". Flagged message: "${flaggedText}".`,
+                    createdAt: new Date()
+                });
+            }
+        } catch (notifErr) {
+            console.error('Notification dispatch warning in warnUser:', notifErr.message);
+        }
 
         const updatedReport = await ChatReports.findByIdAndUpdate(
             reportId,
@@ -201,11 +221,17 @@ exports.warnUser = async (req, res) => {
                 actionTaken: 'warnUser',
                 actionedBy: req.user._id
             },
-            { new: true }
+            { returnDocument: 'after' }
         ).populate('messageId').populate('reportedBy');
 
-        res.status(200).json({ message: 'User warned and report marked as resolved', report: updatedReport, user });
+        res.status(200).json({ 
+            success: true,
+            message: 'User warned and report marked as resolved', 
+            report: updatedReport, 
+            user 
+        });
     } catch (error) {
+        console.error('Error in warnUser:', error);
         res.status(500).json({ message: 'Error warning user', error: error.message });
     }
 };
@@ -213,7 +239,7 @@ exports.warnUser = async (req, res) => {
 exports.suspendReportedUser = async (req, res) => {
     try {
         const { reportId } = req.params;
-        const { reason } = req.body;
+        const reason = req.body?.reason;
 
         const report = await ChatReports.findById(reportId);
         if (!report) {
@@ -225,22 +251,48 @@ exports.suspendReportedUser = async (req, res) => {
             return res.status(404).json({ message: 'Reported message not found' });
         }
 
-        const userId = message.senderId;
+        const targetUserId = message.senderId?._id || message.senderId;
+        if (!targetUserId) {
+            return res.status(400).json({ message: 'Sender of the reported message not found' });
+        }
+
         const reportReason = reason || report.reason || report.otherReason || 'Severe violation of community guidelines';
-        const msgContent = message.content || '';
+        const flaggedText = message.content || message.text || report.content || 'Reported message';
 
-        const user = await User.findByIdAndUpdate(
-            userId,
-            { isSuspended: true },
-            { new: true }
-        ).select('-password -otp');
+        const user = await User.findById(targetUserId);
+        if (user) {
+            user.isSuspended = true;
+            if (!user.suspensionReasons) {
+                user.suspensionReasons = [];
+            }
+            user.suspensionReasons.push({
+                reason: reportReason,
+                suspendedBy: req.user._id,
+                date: new Date()
+            });
+            await user.save();
+        }
 
-        await NotificationService.sendNotification({
-            recipientId: userId,
-            type: 'account_suspended',
-            message: `Account Suspended: Your account has been suspended. Reason: "${req.body.reason || report.reason}". Flagged message: "${message.content}".`,
-            channels: ['in-app']
-        });
+        try {
+            await NotificationService.sendNotification({
+                recipientId: targetUserId,
+                type: 'account_suspended',
+                message: `Account Suspended: Your account has been suspended. Reason: "${reportReason}". Flagged message: "${flaggedText}".`,
+                link: '/support',
+                channels: ['in-app']
+            });
+
+            const ioInstance = global.io || req.app?.get('io');
+            if (ioInstance) {
+                ioInstance.to(`user_${targetUserId}`).emit('notification', {
+                    type: 'account_suspended',
+                    message: `Account Suspended: Your account has been suspended. Reason: "${reportReason}". Flagged message: "${flaggedText}".`,
+                    createdAt: new Date()
+                });
+            }
+        } catch (notifErr) {
+            console.error('Notification dispatch warning in suspendReportedUser:', notifErr.message);
+        }
 
         const updatedReport = await ChatReports.findByIdAndUpdate(
             reportId,
@@ -249,11 +301,17 @@ exports.suspendReportedUser = async (req, res) => {
                 actionTaken: 'suspendUser',
                 actionedBy: req.user._id
             },
-            { new: true }
+            { returnDocument: 'after' }
         ).populate('messageId').populate('reportedBy');
 
-        res.status(200).json({ message: 'User suspended and report marked as resolved', report: updatedReport, user });
+        res.status(200).json({ 
+            success: true,
+            message: 'User suspended and report marked as resolved', 
+            report: updatedReport, 
+            user 
+        });
     } catch (error) {
+        console.error('Error in suspendReportedUser:', error);
         res.status(500).json({ message: 'Error suspending user', error: error.message });
     }
 };
