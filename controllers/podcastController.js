@@ -204,8 +204,10 @@ const getApprovedPodcasts = async (req, res) => {
 const getMentorMyPodcasts = async (req, res) => {
     try {
         const now = new Date();
-        const mentorPodcasts = await Podcast.find({ speaker: req.user._id })
-        .sort({ startTime: -1 });
+        const mentorPodcasts = await Podcast.find({ 
+            speaker: req.user._id,
+            approvalStatus: { $ne: 'rejected' }
+        }).sort({ startTime: -1 });
 
         const pending = [];
         const upcoming = [];
@@ -231,11 +233,13 @@ const getMentorMyPodcasts = async (req, res) => {
                 return;
             }
 
-            const hasEnded = podcastData.streamStatus === 'ended' || new Date(podcastData.endTime) < now;
-            if (hasEnded) {
-                past.push({ ...mapped, status: 'ended' });
-            } else {
-                upcoming.push({ ...mapped, status: 'upcoming' });
+            if (podcastData.approvalStatus === 'approved') {
+                const hasEnded = podcastData.streamStatus === 'ended' || new Date(podcastData.endTime) < now;
+                if (hasEnded) {
+                    past.push({ ...mapped, status: 'ended' });
+                } else {
+                    upcoming.push({ ...mapped, status: 'upcoming' });
+                }
             }
         });
 
@@ -253,7 +257,6 @@ const getMentorMyPodcasts = async (req, res) => {
         });
     }
 };
-
 const startPodcastStream = async (req, res) => {
     try {
         const podcast = await Podcast.findById(req.params.id);
