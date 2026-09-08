@@ -167,8 +167,10 @@ exports.getAdminDashboardInsights = async (req, res) => {
             },
             quickView: {
                 applications: latestApplications.map(app => ({
-                    name: app.fullName || app.mentorId?.username || 'Unknown Applicant',
-                    time: app.createdAt ? new Date(app.createdAt).toLocaleString() : 'Recently'
+                    title: app.fullName || app.mentorId?.username || 'Mentor Application',
+                    subtitle: app.mentorId?.email || app.mentorId?.username || 'Applicant',
+                    name: app.fullName || app.mentorId?.username || 'Applicant',
+                    time: app.createdAt ? new Date(app.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently'
                 })),
                 podcasts: latestPodcasts.map(pod => ({
                     title: pod.title || 'Untitled Podcast',

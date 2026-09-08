@@ -42,12 +42,26 @@ exports.getAllMentors = async (req, res) => {
         const formattedMentors = await Promise.all(
             mentorsList.map(async (mentorDoc) => {
                 const mentor = mentorDoc.toObject();
-                const application = await MentorApplication.findOne({ mentorId: mentor._id });
+                
+                let application = await MentorApplication.findOne({ 
+                    $or: [
+                        { mentorId: mentor._id },
+                        { mentorId: String(mentor._id) }
+                    ]
+                });
+
+                if (!application && mentor.email) {
+                    const linkedUser = await User.findOne({ email: mentor.email });
+                    if (linkedUser) {
+                        application = await MentorApplication.findOne({ mentorId: linkedUser._id });
+                    }
+                }
                 
                 if (!application) {
                     mentor.status = 'not_submitted';
                 } else {
                     mentor.status = application.status;
+                    mentor.applicationId = application._id;
                 }
                 return mentor;
             })
@@ -258,16 +272,24 @@ const s3Client = new S3Client({
 
 exports.getMentorDocumentProxy = async (req, res) => {
   try {
-    const rawKey = req.query.key;
+    let rawKey = req.query.key;
     if (!rawKey) {
       return res.status(400).json({ message: "Document key is required." });
     }
 
-    const fileKey = rawKey.includes('file/documents-uploads/')
-      ? rawKey.split('file/documents-uploads/')[1]
-      : rawKey;
+    rawKey = decodeURIComponent(rawKey);
 
-    const targetBucket = process.env.BACKBLAZE_DOCUMENTS_BUCKET_NAME || 'documents-uploads';
+    let fileKey = rawKey;
+    if (fileKey.includes('/file/')) {
+      const parts = fileKey.split('/file/');
+      const afterFile = parts[1];
+      const slashIdx = afterFile.indexOf('/');
+      fileKey = slashIdx !== -1 ? afterFile.substring(slashIdx + 1) : afterFile;
+    } else if (fileKey.includes('documents-uploads/')) {
+      fileKey = fileKey.split('documents-uploads/')[1];
+    }
+
+    const targetBucket = process.env.BACKBLAZE_DOCUMENTS_BUCKET_NAME || process.env.BACKBLAZE_BUCKET_NAME || 'documents-uploads';
 
     const command = new GetObjectCommand({
       Bucket: targetBucket,
@@ -276,12 +298,25 @@ exports.getMentorDocumentProxy = async (req, res) => {
 
     const response = await s3Client.send(command);
 
-    res.setHeader('Content-Type', response.ContentType || 'application/pdf');
+    let contentType = response.ContentType;
+    const lowerKey = fileKey.toLowerCase();
+    if (!contentType || contentType === 'application/octet-stream') {
+      if (lowerKey.endsWith('.pdf')) contentType = 'application/pdf';
+      else if (lowerKey.endsWith('.png')) contentType = 'image/png';
+      else if (lowerKey.endsWith('.jpg') || lowerKey.endsWith('.jpeg')) contentType = 'image/jpeg';
+      else if (lowerKey.endsWith('.doc')) contentType = 'application/msword';
+      else if (lowerKey.endsWith('.docx')) contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+
+    res.setHeader('Content-Type', contentType || 'application/pdf');
     res.setHeader('Content-Disposition', 'inline');
+    if (response.ContentLength) {
+      res.setHeader('Content-Length', response.ContentLength);
+    }
 
     response.Body.pipe(res);
   } catch (error) {
-    console.error("Document proxy error:", error);
+    console.error("Document proxy streaming error:", error);
     res.status(500).json({ message: "Failed to stream document", error: error.message });
   }
 };

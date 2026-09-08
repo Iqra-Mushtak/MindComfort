@@ -82,6 +82,7 @@ router.get('/clients/stats/overview', protect, adminOnly, getSubscriptionStats);
 
 // Mentors
 router.get('/mentors', protect, adminOnly, getAllMentors);
+router.get('/mentors/document-proxy', protect, adminOnly, getMentorDocumentProxy);
 router.get('/mentors/:mentorId', protect, adminOnly, getMentorDetails);
 router.get('/applications/pending', protect, adminOnly, getPendingApplications);
 router.patch('/applications/:applicationId/approve', protect, adminOnly, approveMentorApplication);
@@ -89,7 +90,6 @@ router.patch('/applications/:applicationId/reject', protect, adminOnly, rejectMe
 router.patch('/mentors/:mentorId/suspend', protect, adminOnly, suspendMentor);
 router.patch('/mentors/:mentorId/unsuspend', protect, adminOnly, unsuspendMentor);
 router.get('/mentors/stats/overview', protect, adminOnly, getMentorStats);
-router.get('/mentors/document-proxy', protect, adminOnly, getMentorDocumentProxy);
 
 // Chatrooms
 router.get('/chatrooms', protect, adminOnly, getAllChatrooms);
