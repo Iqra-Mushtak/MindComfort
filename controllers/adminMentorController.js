@@ -39,33 +39,31 @@ exports.getAllMentors = async (req, res) => {
 
         const total = await User.countDocuments(filter);
 
-        const formattedMentors = await Promise.all(
-            mentorsList.map(async (mentorDoc) => {
-                const mentor = mentorDoc.toObject();
-                
-                let application = await MentorApplication.findOne({ 
-                    $or: [
-                        { mentorId: mentor._id },
-                        { mentorId: String(mentor._id) }
-                    ]
-                });
+        const mentorIds = mentorsList.map((m) => m._id);
+        const applications = await MentorApplication.find({ mentorId: { $in: mentorIds } })
+            .sort({ createdAt: -1 })
+            .lean();
 
-                if (!application && mentor.email) {
-                    const linkedUser = await User.findOne({ email: mentor.email });
-                    if (linkedUser) {
-                        application = await MentorApplication.findOne({ mentorId: linkedUser._id });
-                    }
-                }
-                
-                if (!application) {
-                    mentor.status = 'not_submitted';
-                } else {
-                    mentor.status = application.status;
-                    mentor.applicationId = application._id;
-                }
-                return mentor;
-            })
-        );
+        const latestApplicationByMentor = new Map();
+        for (const app of applications) {
+            const key = String(app.mentorId);
+            if (!latestApplicationByMentor.has(key)) {
+                latestApplicationByMentor.set(key, app);
+            }
+        }
+
+        const formattedMentors = mentorsList.map((mentorDoc) => {
+            const mentor = mentorDoc.toObject();
+            const application = latestApplicationByMentor.get(String(mentor._id));
+
+            if (!application) {
+                mentor.status = 'not_submitted';
+            } else {
+                mentor.status = application.status;
+                mentor.applicationId = application._id;
+            }
+            return mentor;
+        });
 
         res.status(200).json({
             total,
@@ -91,10 +89,15 @@ exports.getMentorDetails = async (req, res) => {
 
         const profile = await MentorProfile.findOne({ mentorId: mentorId }).select('-__v');
 
-        const application = await MentorApplication.findOne({ mentorId: mentorId }).select('-__v');
+        const application = await MentorApplication.findOne({ mentorId: mentorId })
+            .sort({ createdAt: -1 })
+            .select('-__v');
+
+        const mentorWithStatus = mentor.toObject();
+        mentorWithStatus.status = application ? application.status : 'not_submitted';
 
         res.status(200).json({ 
-            mentor, 
+            mentor: mentorWithStatus, 
             profile,
             application
         });
