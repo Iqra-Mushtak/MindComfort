@@ -1,6 +1,6 @@
 const Notification = require('../models/Notifications');
 const User = require('../models/User');
-const { sendEmail } = require('../utils/sendEmail');
+const sendEmail = require('../utils/sendEmail');
 
 const NOTIFICATION_RETENTION_DAYS = 30;
 
