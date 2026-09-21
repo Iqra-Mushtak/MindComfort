@@ -2,7 +2,8 @@
 
 MindComfort is a web-based platform designed to offer an anonymous and affordable space for mental well-being and catharsis. This repository contains the backend REST APIs, WebSocket real-time communication, live audio token generation, and moderation services.
 
-* **Live Application URL**: http://13.60.72.235
+* **Live Application URL**: https://mindcomfort-frontend.onrender.com/
+* **Live API URL**: https://mindcomfort.onrender.com
 * **Frontend Repository**: https://github.com/Iqra-Mushtak/Mindcomfort-Frontend.git
 
 ---
@@ -11,7 +12,7 @@ MindComfort is a web-based platform designed to offer an anonymous and affordabl
 
 * **Node.js & Express.js**: REST API routing and application server logic.
 * **MongoDB Atlas & Mongoose**: Database storage for users, messages, podcasts, and subscriptions.
-* **Redis**: In-memory store deployed via Docker for real-time chatroom rate limiting and active session presence.
+* **Redis**: In-memory store for real-time chatroom rate limiting and active session presence.
 * **Socket.io**: Real-time event communication for community chat, podcast comments and in-app notifications.
 * **Agora RTC SDK**: Dynamic token generation for live audio broadcasting.
 * **Stripe API**: Payment processing and webhook handling for subscription plans and podcast passes.
@@ -55,10 +56,10 @@ Create a .env file in the root directory and configure the following variables:
     PORT=5000
     MONGO_URI=mongodb_connection_uri
     JWT_SECRET=jwt_secret_key
-    CLIENT_URL=[http://13.60.72.235](http://13.60.72.235)
+    CLIENT_URL=https://mindcomfort-frontend.onrender.com
 
     # Redis
-    REDIS_HOST=redis
+    REDIS_HOST=together-haddock-288312.upstash.io.
     REDIS_PORT=6379
     REDIS_PASSWORD=redis_password
 
@@ -84,22 +85,21 @@ Create a .env file in the root directory and configure the following variables:
 
 ---
 
-## Deployment (AWS EC2)
+## Deployment (Render)
 
-The backend is deployed alongside Redis and the frontend on an AWS EC2 Ubuntu t3.micro instance using Docker Compose.
+The backend is deployed as a Web Service on Render.
 
-1. SSH into the server:
-    ssh -i your-key.pem ubuntu@13.60.72.235
+1. Connect GitHub repository to Render.
 
-2. Clone the repository:
-    git clone [https://github.com/Iqra-Mushtak/MindComfort.git](https://github.com/Iqra-Mushtak/MindComfort.git)
-    cd MindComfort
+2. Create a new Web Service.
 
-3. Build and launch services:
-    docker compose up -d --build
+3. Configure the build settings:
+    Build Command: npm install
+    Start Command: node server.js
 
-4. Check running containers:
-    docker ps
+4. Add all the Environment Variables listed above in the Render dashboard.
+
+5. Deploy the service.
 
 ---
 
