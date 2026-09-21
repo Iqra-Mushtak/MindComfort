@@ -258,214 +258,100 @@ const getMentorMyPodcasts = async (req, res) => {
     }
 };
 const startPodcastStream = async (req, res) => {
-    try {
-        const podcast = await Podcast.findById(req.params.id);
-        if (!podcast) {
-            return res.status(404).json({ message: 'Podcast session not found' });
-        }
+try {
+const podcast = await Podcast.findById(req.params.id);
+if (!podcast) {
+return res.status(404).json({ message: 'Podcast session not found' });
+}
 
-        if (podcast.streamStatus === 'live') {
-            if (podcast.speaker.toString() !== req.user._id.toString()) {
-                return res.status(400).json({ message: 'Unauthorized action.' });
-            }
-            return res.status(200).json({
-                success: true,
-                message: 'Resuming the live session.',
-                appId: process.env.AGORA_APP_ID,
-                token: RtcTokenBuilder.buildTokenWithUid(
-                    process.env.AGORA_APP_ID, 
-                    process.env.AGORA_APP_CERTIFICATE,
-                    podcast._id.toString(),
-                    100,
-                    RtcRole.PUBLISHER
-                ),
-                channelName: podcast._id.toString(),
-                data: podcast,
-            });
-        }
-        
-        if (podcast.streamStatus === 'live' && podcast.agoraSid) {
-            return res.status(200).json({
-                success: true,
-                message: 'Stream already active with recording enabled.',
-                appId: process.env.AGORA_APP_ID,
-                token: RtcTokenBuilder.buildTokenWithUid(
-                    process.env.AGORA_APP_ID, 
-                    process.env.AGORA_APP_CERTIFICATE,
-                    podcast._id.toString(),
-                    100,
-                    RtcRole.PUBLISHER),
-                channelName: podcast._id.toString(),
-                data: podcast,
-            });
-        }
-                
-        if (podcast.speaker.toString() !== req.user._id.toString()) {
-            return res.status(403).json({ message: 'You are not authorized to start this podcast session' });
-        }
-        if (podcast.approvalStatus !== 'approved') {
-            return res.status(400).json({ message: 'Only approved podcast sessions can be started' });
-        }
-        if (podcast.streamStatus !== 'scheduled') {
-            return res.status(400).json({ message: 'This podcast session has already been started or ended' });
-        }
-        const channelName = podcast._id.toString();
-        const uid = 100;         
-        const role = RtcRole.PUBLISHER;
-        const expirationTime = 7200;
-        const currentTimestamp = Math.floor(Date.now() / 1000);
-        const privilegeExpiredTs = currentTimestamp + expirationTime;
-
-        const rtcToken = RtcTokenBuilder.buildTokenWithUid(
-            process.env.AGORA_APP_ID, 
-            process.env.AGORA_APP_CERTIFICATE, 
-            channelName, 
-            uid, 
-            role, 
-            privilegeExpiredTs
-        );
-
-        let resourceId = null;
-        let recordingSid = null;
-        let recordingError = null;
-
-        try {
-            console.log('Validating B2/S3 credentials...');
-            if (!process.env.BACKBLAZE_APPLICATION_KEY_ID || !process.env.BACKBLAZE_APPLICATION_KEY) {
-                throw new Error('B2 credentials (BACKBLAZE_APPLICATION_KEY_ID, BACKBLAZE_APPLICATION_KEY) are missing in .env');
-            }
-            if (!process.env.BACKBLAZE_BUCKET_NAME || !process.env.BACKBLAZE_REGION) {
-                throw new Error('B2 bucket configuration (BACKBLAZE_BUCKET_NAME, BACKBLAZE_REGION) is missing in .env');
-            }
-            console.log('B2 credentials validated');
-
-            const headers = getAgoraRestHeaders();
-
-            console.log('Attempting to acquire Agora recording resource...');
-            const aquireResponse = await axios.post(
-                `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/acquire`,
-                {
-                    cname: channelName,
-                    uid: "999",
-                    clientRequest: { resourceExpiredHour: 24, scene: 0 }
-                },
-                { headers }
-            );
-            resourceId = aquireResponse.data.resourceId;
-            console.log('Agora recording resource acquired:', resourceId);
-
-            const recordingConfig = getAgoraRecordingConfig();
-            console.log('Recording config:', JSON.stringify(recordingConfig, null, 2));
-
-            console.log('Starting Agora recording with B2 S3 storage...');
-            console.log('   Bucket:', process.env.BACKBLAZE_BUCKET_NAME);
-            console.log('   Region:', process.env.BACKBLAZE_REGION);
-            console.log('   Endpoint:', process.env.BACKBLAZE_ENDPOINT);
-
-            const startResponse = await axios.post(
-                `https://api.agora.io/v1/apps/${process.env.AGORA_APP_ID}/cloud_recording/resourceid/${resourceId}/mode/mix/start`,
-                {
-                    cname: channelName,
-                    uid: "999",
-                    clientRequest: recordingConfig
-                },
-                { headers }
-            );
-
-            recordingSid = startResponse.data.sid;
-            console.log('Agora recording started successfully with SID:', recordingSid);
-            console.log('Recording will be uploaded to B2 bucket: ' + process.env.BACKBLAZE_BUCKET_NAME);
-
-        } catch (error) {
-            recordingError = error;
-            console.error('RECORDING FAILED:', error.message);
-            console.error('Error details:', error.response?.data || error);
-            console.error('Error status:', error.response?.status);
-
-            if (error.message.includes('credentials')) {
-                console.error('ACTION: Check your B2 credentials in .env file');
-            } else if (error.response?.status === 404 && error.response?.data?.message?.includes('no Route matched')) {
-                console.error('ACTION: Agora Cloud Recording credentials mismatch or not enabled');
-                console.error('   Option 1: Verify App ID matches REST API credentials in Agora Console');
-                console.error('   Option 2: Enable Cloud Recording in Agora Console: https://console.agora.io');
-                console.error('   Option 3: Run this diagnostic to verify: node scripts/validateAgoraSetup.js');
-            } else if (error.response?.status === 401 || error.response?.status === 403) {
-                console.error('ACTION 1: Enable Cloud Recording in Agora Console');
-                console.error('   Go to: https://console.agora.io → Your Project → Cloud Recording');
-                console.error('ACTION 2: Verify your Agora REST API Key and Secret in .env');
-            } else if (error.response?.data?.message?.includes('recording')) {
-                console.error('ACTION: Enable Cloud Recording in Agora Console');
-                console.error('   Go to: https://console.agora.io → Your Project → Cloud Recording');
-            }
-        }
-
-        if (recordingError) {
-            let troubleshooting = [
-                'Verify Cloud Recording is ENABLED in Agora Console: https://console.agora.io',
-                'Check your Agora REST API credentials in .env (AGORA_REST_API_KEY, AGORA_REST_API_SECRET)',
-                'Verify B2 credentials are correct in .env (BACKBLAZE_APPLICATION_KEY_ID, BACKBLAZE_APPLICATION_KEY)',
-                'Ensure B2 bucket exists and is accessible: ' + process.env.BACKBLAZE_BUCKET_NAME
-            ];
-
-            return res.status(500).json({
-                success: false,
-                error: recordingError.message,
-                message: 'Failed to start recording. The stream cannot proceed without recording.',
-                troubleshooting: troubleshooting
-            });
-        }
-
-        podcast.streamStatus = 'live';
-        if (resourceId) podcast.agoraResourceId = resourceId;
-        if (recordingSid) podcast.agoraSid = recordingSid;
-        await podcast.save();
-
-        const podcastRecipients = await User.find({
-            $or: [
-                { role: 'admin' },
-                { role: 'moderator' },
-                { role: 'client', isSubscribed: true }
-            ]
-        }).select('_id');
-
-        const recipientIds = podcastRecipients.map(user => user._id);
-        if (recipientIds.length > 0) {
-            await NotificationService.sendBulkNotifications({
-                recipientIds,
-                type: 'podcast_live',
-                message: `Live now: "${podcast.title}" has started streaming. Join now!`,
-                link: `/podcasts/${podcast._id}`,
-                channels: ['in-app']
-            });
-        }
-
-        const io = req.app.get('io');
-        io.emit('globalPodcastLive', {
-            podcastId: podcast._id,
-            title: podcast.title,
-            speaker: req.user.username
-        });
-        res.status(200).json({
-            success: true,
-            message: 'Podcast stream started successfully with recording enabled',
-            appId: process.env.AGORA_APP_ID,
-            token: rtcToken,
-            channelName: channelName,
-            recordingDetails: {
-                resourceId: resourceId,
-                sessionId: recordingSid,
-                storage: 'B2 (' + process.env.BACKBLAZE_BUCKET_NAME + ')'
-            },
-            data: podcast
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            message: 'Failed to start podcast stream',
-        });
-    }
+    if (podcast.streamStatus === 'live') {
+         if (podcast.speaker.toString() !== req.user._id.toString()) {
+             return res.status(400).json({ message: 'Unauthorized action.' });
+         }
+         return res.status(200).json({
+             success: true,
+             message: 'Resuming the live session.',
+             appId: process.env.AGORA_APP_ID,
+             token: RtcTokenBuilder.buildTokenWithUid(
+                 process.env.AGORA_APP_ID, 
+                 process.env.AGORA_APP_CERTIFICATE,
+                 podcast._id.toString(),
+                 100,
+                 RtcRole.PUBLISHER
+             ),
+             channelName: podcast._id.toString(),
+             data: podcast,
+         });
+     }
+     
+     if (podcast.speaker.toString() !== req.user._id.toString()) {
+         return res.status(403).json({ message: 'You are not authorized to start this podcast session' });
+     }
+     if (podcast.approvalStatus !== 'approved') {
+         return res.status(400).json({ message: 'Only approved podcast sessions can be started' });
+     }
+     if (podcast.streamStatus !== 'scheduled') {
+         return res.status(400).json({ message: 'This podcast session has already been started or ended' });
+     }
+     
+     const channelName = podcast._id.toString();
+     const uid = 100;         
+     const role = RtcRole.PUBLISHER;
+     const expirationTime = 7200;
+     const currentTimestamp = Math.floor(Date.now() / 1000);
+     const privilegeExpiredTs = currentTimestamp + expirationTime;
+     const rtcToken = RtcTokenBuilder.buildTokenWithUid(
+         process.env.AGORA_APP_ID, 
+         process.env.AGORA_APP_CERTIFICATE, 
+         channelName, 
+         uid, 
+         role, 
+         privilegeExpiredTs
+     );
+     
+     podcast.streamStatus = 'live';
+     await podcast.save();
+     
+     const podcastRecipients = await User.find({
+         $or: [
+             { role: 'admin' },
+             { role: 'moderator' },
+             { role: 'client', isSubscribed: true }
+         ]
+     }).select('_id');
+     const recipientIds = podcastRecipients.map(user => user._id);
+     if (recipientIds.length > 0) {
+         await NotificationService.sendBulkNotifications({
+             recipientIds,
+             type: 'podcast_live',
+             message: `Live now: "${podcast.title}" has started streaming. Join now!`,
+             link: `/podcasts/${podcast._id}`,
+             channels: ['in-app']
+         });
+     }
+     
+     const io = req.app.get('io');
+     io.emit('globalPodcastLive', {
+         podcastId: podcast._id,
+         title: podcast.title,
+         speaker: req.user.username
+     });
+     
+     res.status(200).json({
+         success: true,
+         message: 'Podcast stream started successfully',
+         appId: process.env.AGORA_APP_ID,
+         token: rtcToken,
+         channelName: channelName,
+         data: podcast
+     });
+ } catch (error) {
+     res.status(500).json({
+         success: false,
+         error: error.message,
+         message: 'Failed to start podcast stream',
+     });
+ }
 };
 
 const endPodcastStream = async (req, res) => {
