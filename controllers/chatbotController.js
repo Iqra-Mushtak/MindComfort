@@ -4,6 +4,7 @@ const Chatroom = require("../models/Chatroom");
 const Podcast = require("../models/Podcast");
 const Subscription = require("../models/Subscription");
 const { retrieveRelevantKnowledge } = require("../config/platformKnowledge");
+const User = require("../models/User");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -38,6 +39,23 @@ const handleChatbotMessage = async (req, res) => {
         }
       } catch (err) {
         console.warn("Operational query failed (Plans):", err.message);
+      }
+    }
+
+    if (/(mentor|who|list|counselor|therapist|specialist)/i.test(query)) {
+      try {
+        const mentors = await User.find({ role: 'mentor' })
+          .select("fullName username")
+          .lean();
+        
+        if (mentors.length > 0) {
+          dynamicOperationalContext += "\nRegistered Mentors:\n" +
+            mentors.map(m => `- ${m.fullName || m.username}`).join("\n");
+        } else {
+          dynamicOperationalContext += "\nRegistered Mentors:\n- No mentors are currently registered on the platform.";
+        }
+      } catch (err) {
+        console.warn("Operational query failed (Mentors):", err.message);
       }
     }
 
@@ -121,6 +139,8 @@ MindComfort has ONLY two core interactive features and one free tool:
 1. Anonymous Community Chatrooms: Mutual group chatrooms where users interact anonymously using dynamic masked IDs.
 2. Live Audio Podcasts: Real-time mentor broadcasts with live text feedback from listeners.
 3. AI Companion: This free support chat.
+4. All payments are processed securely through Stripe, a trusted third-party payment gateway. Users are redirected to Stripe's secure checkout page to complete transactions. Stripe accepts all major credit and debit cards. After successful payment, users are redirected back to MindComfort and their subscription is automatically activated.
+5. NO "MindComfort's own payment gateway" - we use Stripe exclusively.
 
 Strict Non-Existent Feature Boundaries (NEVER CLAIM OR SUGGEST THESE):
 - NO 1-on-1 private therapist appointments, bookings, or personal consultations.
@@ -129,7 +149,8 @@ Strict Non-Existent Feature Boundaries (NEVER CLAIM OR SUGGEST THESE):
 - NO mood-tracking tools, mood diaries, or emotional rating scales.
 - NO curated resource libraries, articles, or downloadable worksheets.
 
-If a user asks to book a therapist or schedule a 1-on-1 session, politely clarify that MindComfort does not support private bookings or 1-to-1 consultations, and explain that mentors guide mutual community chatrooms and host live audio broadcasts.
+- If a user asks to book a therapist or schedule a 1-on-1 session, politely clarify that MindComfort does not support private bookings or 1-to-1 consultations, and explain that mentors guide mutual community chatrooms and host live audio broadcasts.
+- NEVER invent or hallucinate mentor names. If the "Registered Mentors" list in the Live Platform Data is empty, state clearly that no mentors are currently registered. Only use the exact names provided in the Live Platform Data.
 
 ${dynamicOperationalContext ? `Live Platform Data:\n"""${dynamicOperationalContext}\n"""\n` : ""}
 ${staticKnowledge ? `Platform Documentation:\n"""${staticKnowledge}\n"""\n` : ""}
