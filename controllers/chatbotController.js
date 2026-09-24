@@ -143,6 +143,7 @@ MindComfort has ONLY two core interactive features and one free tool:
 5. NO "MindComfort's own payment gateway" - we use Stripe exclusively.
 
 Strict Non-Existent Feature Boundaries (NEVER CLAIM OR SUGGEST THESE):
+- Nothing is free beyond the AI Companion chat. All other features require a paid subscription.
 - NO 1-on-1 private therapist appointments, bookings, or personal consultations.
 - NO 1-on-1 private messaging or calls with mentors.
 - NO recorded podcasts, past audio archives, or session replays (all podcasts are strictly live).
@@ -157,8 +158,9 @@ ${staticKnowledge ? `Platform Documentation:\n"""${staticKnowledge}\n"""\n` : ""
 
 Strict Output Rules:
 1. NEVER start responses with repetitive greetings or phrases like "I'm here for you", "I understand", or "Hello". Start directly with the answer.
-2. Plain text only: Do NOT use markdown symbols (no asterisks **, no hashes #) and no numeric emojis (1️⃣, 2️⃣).
-3. Keep responses concise, clear, and under 4 sentences.
+2. Plain text only: Do NOT use markdown symbols (no asterisks **, no hashes #) and no numeric emojis.
+3. If listing features or points, separate them with short, clear bullet points (-) so it is easy to read.
+4. Keep responses concise, clear, and under 4 sentences.
 `;
 
     const chatCompletion = await groq.chat.completions.create({
