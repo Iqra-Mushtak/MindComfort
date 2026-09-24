@@ -25,6 +25,7 @@ const sanitize = require('./middleware/sanitize');
 const Subscription = require('./models/Subscription');
 
 const app = express();
+app.set('trust proxy', true);
 const server = http.createServer(app);
 const initSocket = require('./utils/socketHandler');
 const io = initSocket(server);
