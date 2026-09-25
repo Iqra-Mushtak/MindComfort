@@ -1,30 +1,19 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
-    tls: {
-        rejectUnauthorized: false
-    }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendEmail = async (options) => {
-    const mailOptions = {
-        from: `"MindComfort" <${process.env.EMAIL_USER}>`,
-        to: options.email,
-        subject: options.subject,
-        text: options.message,
-        html: options.html,
-    };
-
     try {
-        await transporter.sendMail(mailOptions);
-        console.log(`Email sent successfully to: ${options.email}`);
+        const data = await resend.emails.send({
+            from: 'MindComfort <onboarding@resend.dev>',
+            to: options.email,
+            subject: options.subject,
+            text: options.message,
+            html: options.html,
+        });
+
+        console.log(`Email sent successfully:`, data);
+        return data;
     } catch (error) {
         console.error("Detailed Error:", error);
         throw new Error(`Email service failed: ${error.message}`);
