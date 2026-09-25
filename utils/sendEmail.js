@@ -1,23 +1,32 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 2525,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_PASS,
+  },
+});
 
 const sendEmail = async (options) => {
-    try {
-        const data = await resend.emails.send({
-            from: 'MindComfort <onboarding@resend.dev>',
-            to: options.email,
-            subject: options.subject,
-            text: options.message,
-            html: options.html,
-        });
+  const mailOptions = {
+    from: `"MindComfort" <${process.env.BREVO_USER}>`,
+    to: options.email,
+    subject: options.subject,
+    text: options.message,
+    html: options.html,
+  };
 
-        console.log(`Email sent successfully:`, data);
-        return data;
-    } catch (error) {
-        console.error("Detailed Error:", error);
-        throw new Error(`Email service failed: ${error.message}`);
-    }
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully: ${info.messageId}`);
+    return info;
+  } catch (error) {
+    console.error("Detailed Error:", error);
+    throw new Error(`Email service failed: ${error.message}`);
+  }
 };
 
 module.exports = sendEmail;
