@@ -7,16 +7,16 @@ const fs = require('fs');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const scanReceiptWithAI = async (base64Image) => {
+const scanReceiptWithAI = async (base64Image, mimeType) => {
     try {
         const response = await groq.chat.completions.create({
-            model: "llama-3.2-90b-vision-preview",
+            model: process.env.GROQ_VISION_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct",
             messages: [
                 {
                     role: "user",
                     content: [
                         { type: "text", text: "Extract the Bank Name, Amount, Date, and Transaction Reference ID from this bank transfer receipt. Return ONLY a valid JSON object with keys: bankName, amount, date, transactionId." },
-                        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
                     ]
                 }
             ],
@@ -24,7 +24,7 @@ const scanReceiptWithAI = async (base64Image) => {
         });
         return JSON.parse(response.choices[0].message.content);
     } catch (error) {
-        console.error('Groq Vision Error:', error);
+        console.error('Groq Vision Error:', error.message);
         return { bankName: 'Unknown', amount: 0, date: 'Unknown', transactionId: 'Unknown' };
     }
 };
@@ -39,7 +39,9 @@ exports.submitManualTransaction = async (req, res) => {
         }
 
         const base64Image = fs.readFileSync(file.path).toString('base64');
-        const aiData = await scanReceiptWithAI(base64Image);
+        const aiData = file.mimetype.startsWith('image/')
+            ? await scanReceiptWithAI(base64Image, file.mimetype)
+            : { bankName: 'Unsupported file type', amount: 0, date: 'Unknown', transactionId: 'Unknown' };
 
         const newTransaction = new ManualTransaction({
             userId: req.user._id,
