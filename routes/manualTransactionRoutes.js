@@ -6,6 +6,7 @@ const { receiptUpload } = require('../middleware/upload');
 const { 
     submitManualTransaction, 
     getPendingTransactions, 
+    getMyTransactions,
     reviewTransaction 
 } = require('../controllers/manualTransactionController');
 
@@ -24,6 +25,7 @@ if (typeof authMiddleware === 'function') {
 }
 
 router.post('/submit', authFunc, receiptUpload.single('receipt'), submitManualTransaction);
+router.get('/mine', authFunc, getMyTransactions);
 router.get('/pending', authFunc, getPendingTransactions);
 router.put('/:id/review', authFunc, reviewTransaction);
 

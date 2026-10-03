@@ -64,6 +64,19 @@ exports.submitManualTransaction = async (req, res) => {
             return res.status(400).json({ message: 'Receipt and Plan ID are required' });
         }
 
+        const existingTransaction = await ManualTransaction.findOne({
+            userId: req.user._id,
+            planId,
+            status: { $in: ['pending', 'approved'] }
+        });
+        if (existingTransaction) {
+            return res.status(409).json({
+                message: existingTransaction.status === 'approved'
+                    ? 'You have already purchased this plan.'
+                    : 'You have already submitted a receipt for this plan. It is awaiting admin approval.'
+            });
+        }
+
         const base64Image = file.buffer.toString('base64');
         const extraction = file.mimetype.startsWith('image/')
             ? await scanReceiptWithAI(base64Image, file.mimetype)
@@ -103,6 +116,17 @@ exports.getPendingTransactions = async (req, res) => {
     }
 };
 
+exports.getMyTransactions = async (req, res) => {
+    try {
+        const transactions = await ManualTransaction.find({ userId: req.user._id })
+            .select('planId status createdAt')
+            .sort({ createdAt: -1 });
+        res.json(transactions);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
 exports.reviewTransaction = async (req, res) => {
     try {
         const { id } = req.params;
@@ -136,6 +160,7 @@ exports.reviewTransaction = async (req, res) => {
                 planDurationMonths: plan.durationMonths,
                 startDate,
                 endDate,
+                status: 'active',
                 paymentMethod: 'Manual Bank Transfer',
                 paymentStatus: 'completed',
                 transactionId: transaction.aiExtractedData.transactionId || 'MANUAL-' + transaction._id
