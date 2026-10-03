@@ -31,7 +31,7 @@ const parseExtractedReceipt = (content) => {
 const scanReceiptWithAI = async (base64Image, mimeType) => {
     try {
         const response = await groq.chat.completions.create({
-            model: process.env.GROQ_VISION_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct",
+            model: process.env.GROQ_VISION_MODEL || "qwen/qwen3.8-27b",
             messages: [
                 {
                     role: "user",
@@ -42,7 +42,8 @@ const scanReceiptWithAI = async (base64Image, mimeType) => {
                 }
             ],
             temperature: 0,
-            max_tokens: 300
+            max_completion_tokens: 300,
+            response_format: { type: "json_object" }
         });
         return { data: parseExtractedReceipt(response.choices[0].message.content), error: '' };
     } catch (error) {
