@@ -188,7 +188,7 @@ cron.schedule('*/15 * * * *', async () => {
     console.log('[Cron] Checking for podcasts to auto-cancel...');
     try {
         const now = new Date();
-        const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000);
+        const thirtyMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
 
         const podcastsToCancel = await Podcast.find({
             streamStatus: 'scheduled',
