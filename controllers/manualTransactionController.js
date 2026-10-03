@@ -3,7 +3,7 @@ const Subscription = require('../models/Subscription');
 const Plan = require('../models/Plan');
 const Groq = require('groq-sdk');
 const NotificationService = require('../Services/NotificationService');
-const fs = require('fs');
+const { uploadToB2, getB2FileUrl } = require('../config/b2');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -36,11 +36,13 @@ const scanReceiptWithAI = async (base64Image, mimeType) => {
                 {
                     role: "user",
                     content: [
-                        { type: "text", text: "Extract the Bank Name, Amount, Date, and Transaction Reference ID from this bank transfer receipt. Return ONLY a valid JSON object with keys: bankName, amount, date, transactionId." },
-                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
+                        { type: "text", text: "Read this payment receipt carefully, including small text. Extract the bank name, transferred amount as a number, transaction date, and reference/transaction ID. Return ONLY this JSON shape: {\"bankName\":\"...\",\"amount\":0,\"date\":\"...\",\"transactionId\":\"...\"}. Use \"Unknown\" only when a value is genuinely unreadable." },
+                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}`, detail: "high" } }
                     ]
                 }
-            ]
+            ],
+            temperature: 0,
+            max_tokens: 300
         });
         return parseExtractedReceipt(response.choices[0].message.content);
     } catch (error) {
@@ -58,15 +60,18 @@ exports.submitManualTransaction = async (req, res) => {
             return res.status(400).json({ message: 'Receipt and Plan ID are required' });
         }
 
-        const base64Image = fs.readFileSync(file.path).toString('base64');
+        const base64Image = file.buffer.toString('base64');
         const aiData = file.mimetype.startsWith('image/')
             ? await scanReceiptWithAI(base64Image, file.mimetype)
             : { bankName: 'Unsupported file type', amount: 0, date: 'Unknown', transactionId: 'Unknown' };
+        const receiptKey = `manual-receipts/${req.user._id}-${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const receiptBucket = process.env.BACKBLAZE_DOCUMENTS_BUCKET_NAME || process.env.BACKBLAZE_BUCKET_NAME;
+        await uploadToB2(receiptKey, file.buffer, file.mimetype, receiptBucket);
 
         const newTransaction = new ManualTransaction({
             userId: req.user._id,
             planId,
-            receiptUrl: `/uploads/receipts/${file.filename}`,
+            receiptUrl: getB2FileUrl(receiptKey, receiptBucket),
             aiExtractedData: aiData,
             status: 'pending'
         });

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authmiddleware');
-const upload = require('../middleware/upload');
+const { receiptUpload } = require('../middleware/upload');
 
 const { 
     submitManualTransaction, 
@@ -23,7 +23,7 @@ if (typeof authMiddleware === 'function') {
     console.warn('WARNING: Could not find auth function. Using temporary bypass. Check authmiddleware.js');
 }
 
-router.post('/submit', authFunc, upload.single('receipt'), submitManualTransaction);
+router.post('/submit', authFunc, receiptUpload.single('receipt'), submitManualTransaction);
 router.get('/pending', authFunc, getPendingTransactions);
 router.put('/:id/review', authFunc, reviewTransaction);
 

@@ -36,3 +36,11 @@ const upload = multer({
 module.exports = upload;
 
 module.exports.mentorDocumentUpload = upload.single('mentorDocument');
+
+const receiptUpload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter,
+    limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+module.exports.receiptUpload = receiptUpload;
