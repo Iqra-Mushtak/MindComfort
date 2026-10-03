@@ -20,6 +20,7 @@ const ChatMessage = require('./models/ChatMessage');
 const ChatReport = require('./models/ChatReports');
 const ClientAnonymousSession = require('./models/ClientAnonymousSession');
 const Podcast = require('./models/Podcast');
+const NotificationService = require('./Services/NotificationService');
 const PodcastComment = require('./models/PodcastComment');
 const sanitize = require('./middleware/sanitize');
 const Subscription = require('./models/Subscription');
@@ -178,6 +179,38 @@ cron.schedule('0 1 * * *', async () => {
         }
     } catch (err) {
         console.error('[Cron Error] Auto-Logout Job:', err.message);
+    }
+});
+
+cron.schedule('*/15 * * * *', async () => {
+    console.log('[Cron] Checking for podcasts to auto-cancel...');
+    try {
+        const now = new Date();
+        const thirtyMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+
+        const podcastsToCancel = await Podcast.find({
+            streamStatus: 'scheduled',
+            startTime: { $lte: thirtyMinutesFromNow, $gte: now },
+            purchaseCount: 0
+        }).populate('speaker', 'username email _id');
+
+        for (const podcast of podcastsToCancel) {
+            podcast.streamStatus = 'cancelled';
+            await podcast.save();
+
+            if (podcast.speaker) {
+                await NotificationService.sendNotification({
+                    recipientId: podcast.speaker._id,
+                    type: 'podcast_cancelled',
+                    message: `Your podcast "${podcast.title}" has been automatically cancelled due to no ticket sales 30 minutes prior to start time.`,
+                    link: '/mentor/podcasts',
+                    channels: ['in-app']
+                });
+                console.log(`[Cron] Auto-cancelled podcast: ${podcast.title} (ID: ${podcast._id}) and notified mentor.`);
+            }
+        }
+    } catch (err) {
+        console.error('[Cron Error] Auto-cancel podcast job:', err.message);
     }
 });
 

@@ -48,7 +48,7 @@ const podcastSchema = new mongoose.Schema({
     },
     streamStatus: {
         type: String,
-        enum: ['scheduled', 'live', 'ended'],
+        enum: ['scheduled', 'live', 'ended', 'cancelled'],
         default: 'scheduled'
     },
     audioUrl: {
