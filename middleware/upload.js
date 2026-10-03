@@ -18,19 +18,21 @@ const storage = multer.diskStorage({
     },
 });
 
-const allowedTypes = /\.(pdf|doc|docx)$/i;
+const allowedTypes = /\.(pdf|doc|docx|jpg|jpeg|png)$/i;
 const fileFilter = (req, file, cb) => {
     if (allowedTypes.test(file.originalname)) {
         cb(null, true);
     } else {
-        cb(new Error('Allowed document formats: PDF, DOC, DOCX'));
+        cb(new Error('Allowed formats: PDF, DOC, DOCX, JPG, JPEG, PNG'));
     }
 };
 
 const upload = multer({
     storage,
     fileFilter,
-    limits: { fileSize: 3 * 1024 * 1024 }, 
+    limits: { fileSize: 5 * 1024 * 1024 }, 
 });
 
-exports.mentorDocumentUpload = upload.single('mentorDocument');
+module.exports = upload;
+
+module.exports.mentorDocumentUpload = upload.single('mentorDocument');
