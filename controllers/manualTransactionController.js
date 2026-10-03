@@ -3,7 +3,7 @@ const Subscription = require('../models/Subscription');
 const Plan = require('../models/Plan');
 const Groq = require('groq-sdk');
 const NotificationService = require('../Services/NotificationService');
-const { uploadToB2, getB2FileUrl } = require('../config/b2');
+const { uploadToB2, getB2SignedUrl } = require('../config/b2');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -37,17 +37,20 @@ const scanReceiptWithAI = async (base64Image, mimeType) => {
                     role: "user",
                     content: [
                         { type: "text", text: "Read this payment receipt carefully, including small text. Extract the bank name, transferred amount as a number, transaction date, and reference/transaction ID. Return ONLY this JSON shape: {\"bankName\":\"...\",\"amount\":0,\"date\":\"...\",\"transactionId\":\"...\"}. Use \"Unknown\" only when a value is genuinely unreadable." },
-                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}`, detail: "high" } }
+                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
                     ]
                 }
             ],
             temperature: 0,
             max_tokens: 300
         });
-        return parseExtractedReceipt(response.choices[0].message.content);
+        return { data: parseExtractedReceipt(response.choices[0].message.content), error: '' };
     } catch (error) {
         console.error('Groq Vision Error:', error.message);
-        return { bankName: 'Unknown', amount: 0, date: 'Unknown', transactionId: 'Unknown' };
+        return {
+            data: { bankName: 'Unknown', amount: 0, date: 'Unknown', transactionId: 'Unknown' },
+            error: error.message
+        };
     }
 };
 
@@ -61,9 +64,12 @@ exports.submitManualTransaction = async (req, res) => {
         }
 
         const base64Image = file.buffer.toString('base64');
-        const aiData = file.mimetype.startsWith('image/')
+        const extraction = file.mimetype.startsWith('image/')
             ? await scanReceiptWithAI(base64Image, file.mimetype)
-            : { bankName: 'Unsupported file type', amount: 0, date: 'Unknown', transactionId: 'Unknown' };
+            : {
+                data: { bankName: 'Unsupported file type', amount: 0, date: 'Unknown', transactionId: 'Unknown' },
+                error: 'Only image receipts can be extracted automatically'
+            };
         const receiptKey = `manual-receipts/${req.user._id}-${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         const receiptBucket = process.env.BACKBLAZE_DOCUMENTS_BUCKET_NAME || process.env.BACKBLAZE_BUCKET_NAME;
         await uploadToB2(receiptKey, file.buffer, file.mimetype, receiptBucket);
@@ -71,8 +77,9 @@ exports.submitManualTransaction = async (req, res) => {
         const newTransaction = new ManualTransaction({
             userId: req.user._id,
             planId,
-            receiptUrl: getB2FileUrl(receiptKey, receiptBucket),
-            aiExtractedData: aiData,
+            receiptUrl: await getB2SignedUrl(receiptKey, receiptBucket),
+            aiExtractedData: extraction.data,
+            aiExtractionError: extraction.error,
             status: 'pending'
         });
 

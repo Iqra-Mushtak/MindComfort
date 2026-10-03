@@ -21,6 +21,10 @@ const manualTransactionSchema = new mongoose.Schema({
         date: String,
         transactionId: String
     },
+    aiExtractionError: {
+        type: String,
+        default: ''
+    },
     status: {
         type: String,
         enum: ['pending', 'approved', 'rejected'],

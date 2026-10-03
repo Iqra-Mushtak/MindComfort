@@ -42,9 +42,17 @@ const getB2FileUrl = (filename, bucketName = process.env.BACKBLAZE_BUCKET_NAME) 
   return `${downloadHost}/file/${bucketName}/${filename}`;
 };
 
+const getB2SignedUrl = (filename, bucketName = process.env.BACKBLAZE_BUCKET_NAME) =>
+  s3.getSignedUrlPromise('getObject', {
+    Bucket: bucketName,
+    Key: filename,
+    Expires: 60 * 60,
+  });
+
 module.exports = {
   s3,
   authorizeB2,
   uploadToB2,
   getB2FileUrl,
+  getB2SignedUrl,
 };
