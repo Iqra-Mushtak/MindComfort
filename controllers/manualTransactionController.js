@@ -7,6 +7,27 @@ const fs = require('fs');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+const parseExtractedReceipt = (content) => {
+    const jsonText = content
+        .replace(/```json\s*/i, '')
+        .replace(/```\s*/g, '')
+        .trim();
+    const jsonStart = jsonText.indexOf('{');
+    const jsonEnd = jsonText.lastIndexOf('}');
+
+    if (jsonStart === -1 || jsonEnd <= jsonStart) {
+        throw new Error('Vision model returned no JSON object');
+    }
+
+    const data = JSON.parse(jsonText.slice(jsonStart, jsonEnd + 1));
+    return {
+        bankName: String(data.bankName || 'Unknown'),
+        amount: Number(data.amount) || 0,
+        date: String(data.date || 'Unknown'),
+        transactionId: String(data.transactionId || 'Unknown')
+    };
+};
+
 const scanReceiptWithAI = async (base64Image, mimeType) => {
     try {
         const response = await groq.chat.completions.create({
@@ -19,10 +40,9 @@ const scanReceiptWithAI = async (base64Image, mimeType) => {
                         { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
                     ]
                 }
-            ],
-            response_format: { type: "json_object" }
+            ]
         });
-        return JSON.parse(response.choices[0].message.content);
+        return parseExtractedReceipt(response.choices[0].message.content);
     } catch (error) {
         console.error('Groq Vision Error:', error.message);
         return { bankName: 'Unknown', amount: 0, date: 'Unknown', transactionId: 'Unknown' };
