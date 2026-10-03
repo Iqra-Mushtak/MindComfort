@@ -108,15 +108,21 @@ exports.reviewTransaction = async (req, res) => {
         const { id } = req.params;
         const { status, adminNotes } = req.body;
 
+        if (!['approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ message: 'Review status must be approved or rejected' });
+        }
+
         const transaction = await ManualTransaction.findById(id).populate('userId planId');
         if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
-
-        transaction.status = status;
-        transaction.adminNotes = adminNotes || '';
-        await transaction.save();
+        if (transaction.status !== 'pending') {
+            return res.status(409).json({ message: 'This transaction has already been reviewed' });
+        }
 
         if (status === 'approved') {
             const plan = transaction.planId;
+            if (!plan) {
+                return res.status(400).json({ message: 'The plan associated with this transaction no longer exists' });
+            }
             const startDate = new Date();
             const endDate = new Date();
             endDate.setMonth(endDate.getMonth() + plan.durationMonths);
@@ -124,6 +130,7 @@ exports.reviewTransaction = async (req, res) => {
             await Subscription.create({
                 userId: transaction.userId._id,
                 planId: plan._id,
+                type: plan.type,
                 planName: plan.name,
                 planPrice: plan.price,
                 planDurationMonths: plan.durationMonths,
@@ -151,8 +158,12 @@ exports.reviewTransaction = async (req, res) => {
             });
         }
 
+        transaction.status = status;
+        transaction.adminNotes = adminNotes || '';
+        await transaction.save();
         res.json({ message: `Transaction ${status} successfully.`, transaction });
     } catch (error) {
+        console.error('Manual transaction review error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
