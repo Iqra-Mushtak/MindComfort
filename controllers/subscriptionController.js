@@ -6,6 +6,8 @@ const Podcast = require('../models/Podcast');
 const { createCheckoutSession } = require('../config/stripe'); 
 const { createSubscriptionFromPayment } = require('./webhookController');
 const { createPaymentIntent, getPaymentIntent } = require('../config/stripe');
+const ManualTransaction = require('../models/ManualTransaction');
+const { plansOverlap } = require('../utils/planCoverage');
 
 exports.createSubscription = async (req, res) => {
     try {
@@ -25,28 +27,28 @@ exports.createSubscription = async (req, res) => {
             return res.status(403).json({ message: 'Suspended users cannot subscribe.' });
         }
 
-        let existingActive;
-        if (plan.type === 'both') {
-            existingActive = await Subscription.findOne({
-                userId,
-                planId: { $ne: null },
-                type: { $in: ['chat', 'podcast'] },
-                status: 'active',
-                $or: [{ endDate: { $gt: new Date() } }, { endDate: null }]
-            });
-        } else {
-            existingActive = await Subscription.findOne({
-                userId,
-                planId: { $ne: null },
-                type: plan.type,
-                status: 'active',
-                $or: [{ endDate: { $gt: new Date() } }, { endDate: null }]
-            });
-        }
+        const activeSubscriptions = await Subscription.find({
+            userId,
+            status: 'active',
+            $or: [{ endDate: { $gt: new Date() } }, { endDate: null }]
+        }).select('type');
+        const existingActive = activeSubscriptions.find((subscription) =>
+            plansOverlap(subscription.type, plan.type)
+        );
 
         if (existingActive) {
             return res.status(400).json({ 
-                message: 'You already have an active subscription that covers this plan.' 
+                message: 'You already have an active subscription that covers one or more features in this plan.' 
+            });
+        }
+
+        const pendingTransaction = await ManualTransaction.findOne({
+            userId,
+            status: 'pending'
+        }).populate('planId', 'type');
+        if (pendingTransaction?.planId && plansOverlap(pendingTransaction.planId.type, plan.type)) {
+            return res.status(409).json({
+                message: 'You have already submitted a receipt for a plan covering these features. Please wait for admin approval.'
             });
         }
 

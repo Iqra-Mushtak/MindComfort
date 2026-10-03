@@ -4,6 +4,7 @@ const Plan = require('../models/Plan');
 const Groq = require('groq-sdk');
 const NotificationService = require('../Services/NotificationService');
 const { uploadToB2, getB2SignedUrl } = require('../config/b2');
+const { plansOverlap } = require('../utils/planCoverage');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -64,16 +65,27 @@ exports.submitManualTransaction = async (req, res) => {
             return res.status(400).json({ message: 'Receipt and Plan ID are required' });
         }
 
-        const existingTransaction = await ManualTransaction.findOne({
+        const plan = await Plan.findById(planId).select('type');
+        if (!plan) {
+            return res.status(404).json({ message: 'Plan not found' });
+        }
+        const activeSubscription = await Subscription.findOne({
             userId: req.user._id,
-            planId,
-            status: { $in: ['pending', 'approved'] }
-        });
-        if (existingTransaction) {
+            status: 'active',
+            $or: [{ endDate: { $gt: new Date() } }, { endDate: null }]
+        }).select('type');
+        if (activeSubscription && plansOverlap(activeSubscription.type, plan.type)) {
             return res.status(409).json({
-                message: existingTransaction.status === 'approved'
-                    ? 'You have already purchased this plan.'
-                    : 'You have already submitted a receipt for this plan. It is awaiting admin approval.'
+                message: 'You have already purchased a plan covering one or more features in this plan.'
+            });
+        }
+        const pendingTransaction = await ManualTransaction.findOne({
+            userId: req.user._id,
+            status: 'pending'
+        }).populate('planId', 'type');
+        if (pendingTransaction?.planId && plansOverlap(pendingTransaction.planId.type, plan.type)) {
+            return res.status(409).json({
+                message: 'You have already submitted a receipt for a plan covering these features. It is awaiting admin approval.'
             });
         }
 
@@ -120,6 +132,7 @@ exports.getMyTransactions = async (req, res) => {
     try {
         const transactions = await ManualTransaction.find({ userId: req.user._id })
             .select('planId status createdAt')
+            .populate('planId', 'type')
             .sort({ createdAt: -1 });
         res.json(transactions);
     } catch (error) {
