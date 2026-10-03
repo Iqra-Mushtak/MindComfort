@@ -1,8 +1,8 @@
 const ManualTransaction = require('../models/ManualTransaction');
-const Plan = require('../models/Plan');
 const Subscription = require('../models/Subscription');
-const NotificationService = require('../Services/NotificationService');
+const Plan = require('../models/Plan');
 const Groq = require('groq-sdk');
+const NotificationService = require('../Services/NotificationService');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -31,20 +31,19 @@ const scanReceiptWithAI = async (base64Image) => {
 exports.submitManualTransaction = async (req, res) => {
     try {
         const { planId } = req.body;
-        const file = req.file; 
+        const file = req.file;
 
         if (!file || !planId) {
             return res.status(400).json({ message: 'Receipt and Plan ID are required' });
         }
 
         const base64Image = file.buffer.toString('base64');
-        
         const aiData = await scanReceiptWithAI(base64Image);
 
         const newTransaction = new ManualTransaction({
             userId: req.user._id,
             planId,
-            receiptUrl: `/uploads/${file.filename}`, 
+            receiptUrl: `/uploads/${file.filename}`,
             aiExtractedData: aiData,
             status: 'pending'
         });
@@ -71,7 +70,7 @@ exports.getPendingTransactions = async (req, res) => {
 exports.reviewTransaction = async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, adminNotes } = req.body; 
+        const { status, adminNotes } = req.body;
 
         const transaction = await ManualTransaction.findById(id).populate('userId planId');
         if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
