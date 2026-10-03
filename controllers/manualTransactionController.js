@@ -3,6 +3,7 @@ const Subscription = require('../models/Subscription');
 const Plan = require('../models/Plan');
 const Groq = require('groq-sdk');
 const NotificationService = require('../Services/NotificationService');
+const fs = require('fs');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -37,13 +38,13 @@ exports.submitManualTransaction = async (req, res) => {
             return res.status(400).json({ message: 'Receipt and Plan ID are required' });
         }
 
-        const base64Image = file.buffer.toString('base64');
+        const base64Image = fs.readFileSync(file.path).toString('base64');
         const aiData = await scanReceiptWithAI(base64Image);
 
         const newTransaction = new ManualTransaction({
             userId: req.user._id,
             planId,
-            receiptUrl: `/uploads/${file.filename}`,
+            receiptUrl: `/uploads/receipts/${file.filename}`,
             aiExtractedData: aiData,
             status: 'pending'
         });
