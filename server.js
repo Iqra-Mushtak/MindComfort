@@ -92,6 +92,7 @@ const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const adminSubscriptionRoutes = require('./routes/adminSubscriptionRoutes');
 const planRoutes = require('./routes/planRoutes');
 const chatbotRoutes = require("./routes/chatbotRoutes");
+const manualTransactionRoutes = require('./routes/manualTransactionRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
@@ -104,6 +105,7 @@ app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/moderator', moderatorRoutes);
 app.use("/api/chatbot", chatbotRoutes);
+app.use('/api/manual-transactions', manualTransactionRoutes);
 
 app.get('/', (req, res) => {
     res.send("The MindComfort Backend is officially running!");
@@ -186,7 +188,7 @@ cron.schedule('*/15 * * * *', async () => {
     console.log('[Cron] Checking for podcasts to auto-cancel...');
     try {
         const now = new Date();
-        const thirtyMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+        const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000);
 
         const podcastsToCancel = await Podcast.find({
             streamStatus: 'scheduled',
